@@ -1,0 +1,9 @@
+# @package _global_
+
+name: difficult_gaussian
+defaults:
+  - /initial_config: multivariate_normal
+  - /final_config: funnel
+  - /initial_sampler_config: multivariate_normal
+
+num_dims: 10
