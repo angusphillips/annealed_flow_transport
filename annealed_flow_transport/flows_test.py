@@ -34,7 +34,7 @@ class DiagonalAffineTest(parameterized.TestCase):
   def test_identity_init(self):
     # Config dict is unused here so pass None.
     flow_config = ConfigDict()
-    flow_config.sample_shape = (3,)
+    flow_(config.num_dims,) = (3,)
     def compute_flow(x_loc):
       diagonal_affine_flow = flows.DiagonalAffine(flow_config)
       return diagonal_affine_flow.transform_and_log_abs_det_jac(x_loc)
@@ -59,7 +59,7 @@ class DiagonalAffineTest(parameterized.TestCase):
 
   def test_non_identity(self):
     flow_config = ConfigDict()
-    flow_config.sample_shape = (3,)
+    flow_(config.num_dims,) = (3,)
     # Config dict is unused here so pass None.
     def compute_flow(x_loc):
       diagonal_affine_flow = flows.DiagonalAffine(flow_config)
@@ -513,7 +513,7 @@ class TestHaikuParameterShapes(parameterized.TestCase):
 
   def test_diagonal_affine(self):
     flow_config = ConfigDict()
-    flow_config.sample_shape = (2,)
+    flow_(config.num_dims,) = (2,)
     num_dim = 2
     num_batch = 3
     def run_flow(x):

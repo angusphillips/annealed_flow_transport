@@ -16,7 +16,7 @@
 import time
 from typing import Any, Tuple, Union
 
-from absl import logging
+from absl import logging as log
 from annealed_flow_transport import flow_transport
 import annealed_flow_transport.aft_types as tp
 import jax
@@ -44,293 +44,386 @@ ParticleState = tp.ParticleState
 
 
 def inner_step_craft(
-    key: RandomKey, free_energy_and_grad: FreeEnergyAndGrad,
+    key: RandomKey,
+    free_energy_and_grad: FreeEnergyAndGrad,
     flow_params: FlowParams,
-    flow_apply: FlowApply, markov_kernel_apply: MarkovKernelApply,
-    samples: Array, log_weights: Array, log_density: LogDensityByStep,
-    step: int, config
+    flow_apply: FlowApply,
+    markov_kernel_apply: MarkovKernelApply,
+    samples: Array,
+    log_weights: Array,
+    log_density: LogDensityByStep,
+    step: int,
+    config,
 ) -> Tuple[FlowParams, Array, Array, Samples, Array, AcceptanceTuple]:
-  """A temperature step of CRAFT.
+    """A temperature step of CRAFT.
 
-  Args:
-    key: A JAX random key.
-    free_energy_and_grad: function giving estimate of free energy and gradient.
-    flow_params: parameters of the flow.
-    flow_apply: function that applies the flow.
-    markov_kernel_apply: function that applies the Markov transition kernel.
-    samples: input samples.
-    log_weights: Array containing train/validation/test log_weights.
-    log_density:  function returning the log_density of a sample at given step.
-    step: int giving current step of algorithm.
-    config: experiment configuration.
+    Args:
+      key: A JAX random key.
+      free_energy_and_grad: function giving estimate of free energy and gradient.
+      flow_params: parameters of the flow.
+      flow_apply: function that applies the flow.
+      markov_kernel_apply: function that applies the Markov transition kernel.
+      samples: input samples.
+      log_weights: Array containing train/validation/test log_weights.
+      log_density:  function returning the log_density of a sample at given step.
+      step: int giving current step of algorithm.
+      config: experiment configuration.
 
-  Returns:
-    flow_grads: Gradient with respect to parameters of flow.
-    vfe: Value of the objective for this temperature.
-    log_normalizer_increment: Scalar log of normalizing constant increment.
-    next_samples: samples after temperature step has been performed.
-    new_log_weights: log_weights after temperature step has been performed.
-    acceptance_tuple: Acceptance rate of the Markov kernels used.
-  """
-  vfe, flow_grads = free_energy_and_grad(flow_params,
-                                         samples,
-                                         log_weights,
-                                         step)
-  log_normalizer_increment = flow_transport.get_log_normalizer_increment(
-      samples, log_weights, flow_apply, flow_params, log_density, step)
-  next_samples, next_log_weights, acceptance_tuple = flow_transport.update_samples_log_weights(
-      flow_apply=flow_apply, markov_kernel_apply=markov_kernel_apply,
-      flow_params=flow_params, samples=samples, log_weights=log_weights,
-      key=key, log_density=log_density, step=step,
-      use_resampling=config.use_resampling, use_markov=config.use_markov,
-      resample_threshold=config.resample_threshold)
-
-  return flow_grads, vfe, log_normalizer_increment, next_samples, next_log_weights, acceptance_tuple
-
-
-def inner_loop_craft(key: RandomKey, free_energy_and_grad: FreeEnergyAndGrad,
-                     opt_update: UpdateFn, opt_states: OptState,
-                     transition_params: FlowParams, flow_apply: FlowApply,
-                     markov_kernel_apply: MarkovKernelApply,
-                     initial_sampler: InitialSampler,
-                     log_density: LogDensityByStep, config,
-                     axis_name=None):
-  """Inner loop of CRAFT training.
-
-  Uses Scan step requiring trees that have the same structure as the base input
-  but with each leaf extended with an extra array index of size num_transitions.
-  We call this an extended tree.
-
-  Args:
-    key: A JAX random key.
-    free_energy_and_grad: function giving estimate of free energy and gradient.
-    opt_update: function that updates the state of flow based on gradients etc.
-    opt_states: Extended tree of optimizer states.
-    transition_params: Extended tree of flow parameters.
-    flow_apply: function that applies the flow.
-    markov_kernel_apply: function that applies the Markov transition kernel.
-    initial_sampler: A function that produces the initial samples.
-    log_density: A function evaluating the log density for each step.
-    config: A ConfigDict containing the configuration.
-    axis_name: None or string for gradient sync when using pmap only.
-  Returns:
-    final_samples: final samples.
-    final_log_weights: Array of final log_weights.
-    final_transition_params: Extended tree of updated flow params.
-    final_opt_states: Extended tree of updated optimizer parameters.
-    overall_free_energy: Total variational free energy.
-    log_normalizer_estimate: Estimate of the log normalizers.
-  """
-  subkey, key = jax.random.split(key)
-  initial_samples = initial_sampler(subkey, config.craft_batch_size,
-                                    config.sample_shape)
-  initial_log_weights = -jnp.log(config.craft_batch_size) * jnp.ones(
-      config.craft_batch_size)
-
-  def scan_step(passed_state, per_step_input):
-    samples, log_weights = passed_state
-    flow_params, key, inner_step = per_step_input
-    flow_grads, vfe, log_normalizer_increment, next_samples, next_log_weights, acceptance_tuple = inner_step_craft(
-        key=key,
-        free_energy_and_grad=free_energy_and_grad,
-        flow_params=flow_params,
+    Returns:
+      flow_grads: Gradient with respect to parameters of flow.
+      vfe: Value of the objective for this temperature.
+      log_normalizer_increment: Scalar log of normalizing constant increment.
+      next_samples: samples after temperature step has been performed.
+      new_log_weights: log_weights after temperature step has been performed.
+      acceptance_tuple: Acceptance rate of the Markov kernels used.
+    """
+    vfe, flow_grads = free_energy_and_grad(flow_params, samples, log_weights, step)
+    log_normalizer_increment = flow_transport.get_log_normalizer_increment(
+        samples, log_weights, flow_apply, flow_params, log_density, step
+    )
+    (
+        next_samples,
+        next_log_weights,
+        acceptance_tuple,
+    ) = flow_transport.update_samples_log_weights(
         flow_apply=flow_apply,
         markov_kernel_apply=markov_kernel_apply,
+        flow_params=flow_params,
         samples=samples,
         log_weights=log_weights,
+        key=key,
         log_density=log_density,
-        step=inner_step,
-        config=config)
-    next_passed_state = (next_samples, next_log_weights)
-    per_step_output = (flow_grads, vfe,
-                       log_normalizer_increment, acceptance_tuple)
-    return next_passed_state, per_step_output
+        step=step,
+        use_resampling=config.use_resampling,
+        use_markov=config.use_markov,
+        resample_threshold=config.resample_threshold,
+    )
 
-  initial_state = (initial_samples, initial_log_weights)
-  inner_steps = jnp.arange(1, config.num_temps)
-  keys = jax.random.split(key, config.num_temps-1)
-  per_step_inputs = (transition_params, keys, inner_steps)
-  final_state, per_step_outputs = jax.lax.scan(scan_step, initial_state,
-                                               per_step_inputs)
-  final_samples, final_log_weights = final_state
-  flow_grads, free_energies, log_normalizer_increments, unused_acceptance_tuples = per_step_outputs
-
-  if axis_name:
-    flow_grads = jax.lax.pmean(flow_grads, axis_name=axis_name)
-
-  def per_step_update(input_tuple):
-    (step_grad, step_opt, step_params) = input_tuple
-    step_updates, new_opt_state = opt_update(step_grad,
-                                             step_opt)
-    new_step_params = optax.apply_updates(step_params,
-                                          step_updates)
-    return new_step_params, new_opt_state
-
-  final_transition_params, final_opt_states = jax.lax.map(
-      per_step_update, (flow_grads, opt_states, transition_params))
-
-  overall_free_energy = jnp.sum(free_energies)
-  log_normalizer_estimate = jnp.sum(log_normalizer_increments)
-  return final_samples, final_log_weights, final_transition_params, final_opt_states, overall_free_energy, log_normalizer_estimate
+    return (
+        flow_grads,
+        vfe,
+        log_normalizer_increment,
+        next_samples,
+        next_log_weights,
+        acceptance_tuple,
+    )
 
 
-def craft_evaluation_loop(key: RandomKey, transition_params: FlowParams,
-                          flow_apply: FlowApply,
-                          markov_kernel_apply: MarkovKernelApply,
-                          initial_sampler: InitialSampler,
-                          log_density: LogDensityByStep,
-                          config) -> ParticleState:
-  """A single pass of CRAFT with fixed flows.
+def inner_loop_craft(
+    key: RandomKey,
+    free_energy_and_grad: FreeEnergyAndGrad,
+    opt_update: UpdateFn,
+    opt_states: OptState,
+    transition_params: FlowParams,
+    flow_apply: FlowApply,
+    markov_kernel_apply: MarkovKernelApply,
+    initial_sampler: InitialSampler,
+    log_density: LogDensityByStep,
+    config,
+    axis_name=None,
+):
+    """Inner loop of CRAFT training.
 
-  Uses Scan step requiring trees that have the same structure as the base input
-  but with each leaf extended with an extra array index of size num_transitions.
-  We call this an extended tree.
+    Uses Scan step requiring trees that have the same structure as the base input
+    but with each leaf extended with an extra array index of size num_transitions.
+    We call this an extended tree.
 
-  Args:
-    key: A JAX random key.
-    transition_params: Extended tree of flow parameters.
-    flow_apply: function that applies the flow.
-    markov_kernel_apply: function that applies the Markov transition kernel.
-    initial_sampler: A function that produces the initial samples.
-    log_density: A function evaluating the log density for each step.
-    config: A ConfigDict containing the configuration.
-  Returns:
-    ParticleState containing samples, log_weights, log_normalizer_estimate.
-  """
-  subkey, key = jax.random.split(key)
-  initial_samples = initial_sampler(subkey, config.craft_batch_size,
-                                    config.sample_shape)
-  initial_log_weights = -jnp.log(config.craft_batch_size) * jnp.ones(
-      config.craft_batch_size)
+    Args:
+      key: A JAX random key.
+      free_energy_and_grad: function giving estimate of free energy and gradient.
+      opt_update: function that updates the state of flow based on gradients etc.
+      opt_states: Extended tree of optimizer states.
+      transition_params: Extended tree of flow parameters.
+      flow_apply: function that applies the flow.
+      markov_kernel_apply: function that applies the Markov transition kernel.
+      initial_sampler: A function that produces the initial samples.
+      log_density: A function evaluating the log density for each step.
+      config: A ConfigDict containing the configuration.
+      axis_name: None or string for gradient sync when using pmap only.
+    Returns:
+      final_samples: final samples.
+      final_log_weights: Array of final log_weights.
+      final_transition_params: Extended tree of updated flow params.
+      final_opt_states: Extended tree of updated optimizer parameters.
+      overall_free_energy: Total variational free energy.
+      log_normalizer_estimate: Estimate of the log normalizers.
+    """
+    subkey, key = jax.random.split(key)
+    initial_samples = initial_sampler(
+        subkey, config.craft_batch_size, (config.num_dims,)
+    )
+    initial_log_weights = -jnp.log(config.craft_batch_size) * jnp.ones(
+        config.craft_batch_size
+    )
 
-  def scan_step(passed_state, per_step_input):
-    samples, log_weights = passed_state
-    flow_params, key, inner_step = per_step_input
-    log_normalizer_increment = flow_transport.get_log_normalizer_increment(
-        samples, log_weights, flow_apply, flow_params, log_density, inner_step)
-    next_samples, next_log_weights, acceptance_tuple = flow_transport.update_samples_log_weights(
-        flow_apply=flow_apply, markov_kernel_apply=markov_kernel_apply,
-        flow_params=flow_params, samples=samples, log_weights=log_weights,
-        key=key, log_density=log_density, step=inner_step,
-        use_resampling=config.use_resampling, use_markov=config.use_markov,
-        resample_threshold=config.resample_threshold)
-    next_passed_state = (next_samples, next_log_weights)
-    per_step_output = (log_normalizer_increment, acceptance_tuple)
-    return next_passed_state, per_step_output
+    def scan_step(passed_state, per_step_input):
+        samples, log_weights = passed_state
+        flow_params, key, inner_step = per_step_input
+        (
+            flow_grads,
+            vfe,
+            log_normalizer_increment,
+            next_samples,
+            next_log_weights,
+            acceptance_tuple,
+        ) = inner_step_craft(
+            key=key,
+            free_energy_and_grad=free_energy_and_grad,
+            flow_params=flow_params,
+            flow_apply=flow_apply,
+            markov_kernel_apply=markov_kernel_apply,
+            samples=samples,
+            log_weights=log_weights,
+            log_density=log_density,
+            step=inner_step,
+            config=config,
+        )
+        next_passed_state = (next_samples, next_log_weights)
+        per_step_output = (flow_grads, vfe, log_normalizer_increment, acceptance_tuple)
+        return next_passed_state, per_step_output
 
-  initial_state = (initial_samples, initial_log_weights)
-  inner_steps = jnp.arange(1, config.num_temps)
-  keys = jax.random.split(key, config.num_temps-1)
-  per_step_inputs = (transition_params, keys, inner_steps)
-  final_state, per_step_outputs = jax.lax.scan(scan_step, initial_state,
-                                               per_step_inputs)
-  final_samples, final_log_weights = final_state
-  log_normalizer_increments, unused_acceptance_tuples = per_step_outputs
-  log_normalizer_estimate = jnp.sum(log_normalizer_increments)
-  particle_state = ParticleState(
-      samples=final_samples,
-      log_weights=final_log_weights,
-      log_normalizer_estimate=log_normalizer_estimate)
-  return particle_state
+    initial_state = (initial_samples, initial_log_weights)
+    inner_steps = jnp.arange(1, config.num_temps)
+    keys = jax.random.split(key, config.num_temps - 1)
+    per_step_inputs = (transition_params, keys, inner_steps)
+    final_state, per_step_outputs = jax.lax.scan(
+        scan_step, initial_state, per_step_inputs
+    )
+    final_samples, final_log_weights = final_state
+    (
+        flow_grads,
+        free_energies,
+        log_normalizer_increments,
+        unused_acceptance_tuples,
+    ) = per_step_outputs
+
+    if axis_name:
+        flow_grads = jax.lax.pmean(flow_grads, axis_name=axis_name)
+
+    def per_step_update(input_tuple):
+        (step_grad, step_opt, step_params) = input_tuple
+        step_updates, new_opt_state = opt_update(step_grad, step_opt)
+        new_step_params = optax.apply_updates(step_params, step_updates)
+        return new_step_params, new_opt_state
+
+    final_transition_params, final_opt_states = jax.lax.map(
+        per_step_update, (flow_grads, opt_states, transition_params)
+    )
+
+    overall_free_energy = jnp.sum(free_energies)
+    log_normalizer_estimate = jnp.sum(log_normalizer_increments)
+    return (
+        final_samples,
+        final_log_weights,
+        final_transition_params,
+        final_opt_states,
+        overall_free_energy,
+        log_normalizer_estimate,
+    )
 
 
-def outer_loop_craft(opt_update: UpdateFn,
-                     opt_init_state: OptState,
-                     flow_init_params: FlowParams,
-                     flow_apply: FlowApply,
-                     flow_inv_apply: Union[FlowApply, Any],
-                     density_by_step: LogDensityByStep,
-                     markov_kernel_by_step: MarkovKernelApply,
-                     initial_sampler: InitialSampler,
-                     key: RandomKey,
-                     config,
-                     log_step_output,
-                     save_checkpoint) -> AlgoResultsTuple:
-  """Outer loop for CRAFT training.
+def craft_evaluation_loop(
+    key: RandomKey,
+    transition_params: FlowParams,
+    flow_apply: FlowApply,
+    markov_kernel_apply: MarkovKernelApply,
+    initial_sampler: InitialSampler,
+    log_density: LogDensityByStep,
+    config,
+) -> ParticleState:
+    """A single pass of CRAFT with fixed flows.
 
-  Args:
-    opt_update: function that updates the state of flow based on gradients etc.
-    opt_init_state: initial state variables of the optimizer.
-    flow_init_params: initial state of the flow.
-    flow_apply: function that applies the flow.
-    flow_inv_apply: function that applies the inverse flow or None.
-    density_by_step: The log density for different annealing temperatures.
-    markov_kernel_by_step: Markov kernel for different annealing temperatures.
-    initial_sampler: A function that produces the initial samples.
-    key: A Jax random key.
-    config: A ConfigDict containing the configuration.
-    log_step_output: Callable that logs the step output.
-    save_checkpoint: None or function that takes params and saves them.
-  Returns:
-    An AlgoResults tuple containing a summary of the results.
-  """
-  num_temps = config.num_temps
-  def free_energy_short(flow_params: FlowParams,
-                        samples: Samples,
-                        log_weights: Array,
-                        step: int) -> Array:
-    return flow_transport.transport_free_energy_estimator(
-        samples, log_weights, flow_apply, flow_inv_apply, flow_params,
-        density_by_step, step, config.use_path_gradient)
+    Uses Scan step requiring trees that have the same structure as the base input
+    but with each leaf extended with an extra array index of size num_transitions.
+    We call this an extended tree.
 
-  free_energy_and_grad = jax.value_and_grad(free_energy_short)
-  def short_inner_loop(rng_key: RandomKey,
-                       curr_opt_states: OptState,
-                       curr_transition_params):
-    return inner_loop_craft(key=rng_key,
-                            free_energy_and_grad=free_energy_and_grad,
-                            opt_update=opt_update,
-                            opt_states=curr_opt_states,
-                            transition_params=curr_transition_params,
-                            flow_apply=flow_apply,
-                            markov_kernel_apply=markov_kernel_by_step,
-                            initial_sampler=initial_sampler,
-                            log_density=density_by_step,
-                            config=config)
-  inner_loop_jit = jax.jit(short_inner_loop)
+    Args:
+      key: A JAX random key.
+      transition_params: Extended tree of flow parameters.
+      flow_apply: function that applies the flow.
+      markov_kernel_apply: function that applies the Markov transition kernel.
+      initial_sampler: A function that produces the initial samples.
+      log_density: A function evaluating the log density for each step.
+      config: A ConfigDict containing the configuration.
+    Returns:
+      ParticleState containing samples, log_weights, log_normalizer_estimate.
+    """
+    subkey, key = jax.random.split(key)
+    initial_samples = initial_sampler(
+        subkey, config.craft_batch_size, (config.num_dims,)
+    )
+    initial_log_weights = -jnp.log(config.craft_batch_size) * jnp.ones(
+        config.craft_batch_size
+    )
 
-  repeater = lambda x: jnp.repeat(x[None], num_temps-1, axis=0)
-  opt_states = jax.tree_util.tree_map(repeater, opt_init_state)
-  transition_params = jax.tree_util.tree_map(repeater, flow_init_params)
+    def scan_step(passed_state, per_step_input):
+        samples, log_weights = passed_state
+        flow_params, key, inner_step = per_step_input
+        log_normalizer_increment = flow_transport.get_log_normalizer_increment(
+            samples, log_weights, flow_apply, flow_params, log_density, inner_step
+        )
+        (
+            next_samples,
+            next_log_weights,
+            acceptance_tuple,
+        ) = flow_transport.update_samples_log_weights(
+            flow_apply=flow_apply,
+            markov_kernel_apply=markov_kernel_apply,
+            flow_params=flow_params,
+            samples=samples,
+            log_weights=log_weights,
+            key=key,
+            log_density=log_density,
+            step=inner_step,
+            use_resampling=config.use_resampling,
+            use_markov=config.use_markov,
+            resample_threshold=config.resample_threshold,
+        )
+        next_passed_state = (next_samples, next_log_weights)
+        per_step_output = (log_normalizer_increment, acceptance_tuple)
+        return next_passed_state, per_step_output
 
-  logging.info('Performing initial step redundantly for accurate timing...')
-  initial_start_time = time.time()
-  inner_loop_jit(key, opt_states, transition_params)
-  initial_finish_time = time.time()
-  initial_time_diff = initial_finish_time - initial_start_time
-  logging.info('Initial step time / seconds  %f: ', initial_time_diff)
-  logging.info('Launching training...')
+    initial_state = (initial_samples, initial_log_weights)
+    inner_steps = jnp.arange(1, config.num_temps)
+    keys = jax.random.split(key, config.num_temps - 1)
+    per_step_inputs = (transition_params, keys, inner_steps)
+    final_state, per_step_outputs = jax.lax.scan(
+        scan_step, initial_state, per_step_inputs
+    )
+    final_samples, final_log_weights = final_state
+    log_normalizer_increments, unused_acceptance_tuples = per_step_outputs
+    log_normalizer_estimate = jnp.sum(log_normalizer_increments)
+    particle_state = ParticleState(
+        samples=final_samples,
+        log_weights=final_log_weights,
+        log_normalizer_estimate=log_normalizer_estimate,
+    )
+    return particle_state
 
-  start_time = time.time()
-  for step in range(config.craft_num_iters):
-    with jax.profiler.StepTraceAnnotation('train', step_num=step):
-      key, subkey = jax.random.split(key)
-      final_samples, final_log_weights, transition_params, opt_states, overall_free_energy, log_normalizer_estimate = inner_loop_jit(
-          subkey, opt_states, transition_params)
-      if step % config.report_step == 0:
-        if log_step_output is not None:
-          delta_time = time.time()-start_time
-          log_step_output(step=step,
-                          training_objective=overall_free_energy,
-                          log_normalizer_estimate=log_normalizer_estimate,
-                          delta_time=delta_time,
-                          samples=final_samples,
-                          log_weights=final_log_weights)
-        logging.info(
-            'Step %05d: Free energy %f Log Normalizer estimate %f',
-            step, overall_free_energy, log_normalizer_estimate
-            )
 
-  finish_time = time.time()
-  delta_time = finish_time - start_time
-  logging.info('Delta time / seconds  %f: ', delta_time)
-  logging.info('Log normalizer estimate %f: ', log_normalizer_estimate)
-  if save_checkpoint:
-    save_checkpoint(transition_params)
-  results = AlgoResultsTuple(
-      test_samples=final_samples,
-      test_log_weights=final_log_weights,
-      log_normalizer_estimate=log_normalizer_estimate,
-      delta_time=delta_time,
-      initial_time_diff=initial_time_diff)
-  return results
+def outer_loop_craft(
+    opt_update: UpdateFn,
+    opt_init_state: OptState,
+    flow_init_params: FlowParams,
+    flow_apply: FlowApply,
+    flow_inv_apply: Union[FlowApply, Any],
+    density_by_step: LogDensityByStep,
+    markov_kernel_by_step: MarkovKernelApply,
+    initial_sampler: InitialSampler,
+    key: RandomKey,
+    config,
+    log_step_output,
+    save_checkpoint,
+    logger,
+) -> AlgoResultsTuple:
+    """Outer loop for CRAFT training.
+
+    Args:
+      opt_update: function that updates the state of flow based on gradients etc.
+      opt_init_state: initial state variables of the optimizer.
+      flow_init_params: initial state of the flow.
+      flow_apply: function that applies the flow.
+      flow_inv_apply: function that applies the inverse flow or None.
+      density_by_step: The log density for different annealing temperatures.
+      markov_kernel_by_step: Markov kernel for different annealing temperatures.
+      initial_sampler: A function that produces the initial samples.
+      key: A Jax random key.
+      config: A ConfigDict containing the configuration.
+      log_step_output: Callable that logs the step output.
+      save_checkpoint: None or function that takes params and saves them.
+    Returns:
+      An AlgoResults tuple containing a summary of the results.
+    """
+    num_temps = config.num_temps
+
+    def free_energy_short(
+        flow_params: FlowParams, samples: Samples, log_weights: Array, step: int
+    ) -> Array:
+        return flow_transport.transport_free_energy_estimator(
+            samples,
+            log_weights,
+            flow_apply,
+            flow_inv_apply,
+            flow_params,
+            density_by_step,
+            step,
+            config.use_path_gradient,
+        )
+
+    free_energy_and_grad = jax.value_and_grad(free_energy_short)
+
+    def short_inner_loop(
+        rng_key: RandomKey, curr_opt_states: OptState, curr_transition_params
+    ):
+        return inner_loop_craft(
+            key=rng_key,
+            free_energy_and_grad=free_energy_and_grad,
+            opt_update=opt_update,
+            opt_states=curr_opt_states,
+            transition_params=curr_transition_params,
+            flow_apply=flow_apply,
+            markov_kernel_apply=markov_kernel_by_step,
+            initial_sampler=initial_sampler,
+            log_density=density_by_step,
+            config=config,
+        )
+
+    inner_loop_jit = jax.jit(short_inner_loop)
+
+    repeater = lambda x: jnp.repeat(x[None], num_temps - 1, axis=0)
+    opt_states = jax.tree_util.tree_map(repeater, opt_init_state)
+    transition_params = jax.tree_util.tree_map(repeater, flow_init_params)
+
+    log.info("Performing initial step redundantly for accurate timing...")
+    initial_start_time = time.time()
+    inner_loop_jit(key, opt_states, transition_params)
+    initial_finish_time = time.time()
+    initial_time_diff = initial_finish_time - initial_start_time
+    log.info("Initial step time / seconds  %f: ", initial_time_diff)
+    log.info("Launching training...")
+
+    start_time = time.time()
+    for step in range(config.craft_num_iters):
+        with jax.profiler.StepTraceAnnotation("train", step_num=step):
+            key, subkey = jax.random.split(key)
+            (
+                final_samples,
+                final_log_weights,
+                transition_params,
+                opt_states,
+                overall_free_energy,
+                log_normalizer_estimate,
+            ) = inner_loop_jit(subkey, opt_states, transition_params)
+            if step % config.report_step == 0:
+                if log_step_output is not None:
+                    delta_time = time.time() - start_time
+                    log_step_output(
+                        step=step,
+                        training_objective=overall_free_energy,
+                        log_normalizer_estimate=log_normalizer_estimate,
+                        delta_time=delta_time,
+                        samples=final_samples,
+                        log_weights=final_log_weights,
+                    )
+                log.info(
+                    "Step %05d: Free energy %f Log Normalizer estimate %f",
+                    step,
+                    overall_free_energy,
+                    log_normalizer_estimate,
+                )
+                logger.log_metrics({"log_Z": log_normalizer_estimate}, step)
+
+    finish_time = time.time()
+    delta_time = finish_time - start_time
+    log.info("Delta time / seconds  %f: ", delta_time)
+    log.info("Log normalizer estimate %f: ", log_normalizer_estimate)
+    if save_checkpoint:
+        save_checkpoint(transition_params)
+    results = AlgoResultsTuple(
+        test_samples=final_samples,
+        test_log_weights=final_log_weights,
+        log_normalizer_estimate=log_normalizer_estimate,
+        delta_time=delta_time,
+        initial_time_diff=initial_time_diff,
+    )
+    return results

@@ -12,27 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Main entry point for annealed flow transport and baselines."""
+"""Main entry point for annealed flow transport and baselines.
+Modified from https://github.com/google-deepmind/annealed_flow_transport to include hydra config and wandb logging"""
 
-from typing import Sequence
+import os
+import hydra
 
-from absl import app
-from absl import flags
 from annealed_flow_transport import train
-from ml_collections.config_flags import config_flags
-
-FLAGS = flags.FLAGS
-config_flags.DEFINE_config_file('config',
-                                './configs/single_normal.py',
-                                'Training configuration.')
 
 
-def main(argv: Sequence[str]) -> None:
-  config = FLAGS.config
-  info = 'Displaying config '+str(config)
-  if len(argv) > 1:
-    raise app.UsageError('Too many command-line arguments.')
-  train.run_experiment(config)
+@hydra.main(config_path="config", config_name="main")
+def main(config):
+    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    os.environ["WANDB_START_METHOD"] = "thread"
+    train.run_experiment(config)
 
-if __name__ == '__main__':
-  app.run(main)
+
+if __name__ == "__main__":
+    main()

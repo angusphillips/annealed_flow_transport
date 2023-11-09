@@ -1,0 +1,11 @@
+# @package _global_
+
+algo: smc
+
+defaults:
+  - /mcmc_config: smc
+
+num_temps: 10
+
+use_resampling: True
+resample_threshold: 0.3

@@ -1,0 +1,7 @@
+wandb:
+  _target_: annealed_flow_transport.loggers_pl.WandbLogger
+  name: ${hydra:job.override_dirname}
+  group: ${group}
+  entity: oxcsml
+  project: ${PROJECT_NAME}
+  offline: False

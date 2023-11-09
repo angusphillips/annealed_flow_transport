@@ -158,7 +158,7 @@ class PathGradientTest(parameterized.TestCase):
     temp_index = 2
 
     flow_config = ConfigDict()
-    flow_config.sample_shape = (num_dim,)
+    flow_(config.num_dims,) = (num_dim,)
 
     def flow_func(x):
       flow = DiagonalAffine(flow_config)

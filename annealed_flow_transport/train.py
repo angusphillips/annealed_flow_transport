@@ -13,9 +13,12 @@
 # limitations under the License.
 
 """Training for all SMC and flow algorithms."""
-
+import os
+import socket
 from typing import Callable, Tuple
 
+from absl import logging as log
+from annealed_flow_transport.loggers_pl import LoggerCollection
 from annealed_flow_transport import aft
 from annealed_flow_transport import craft
 from annealed_flow_transport import densities
@@ -32,6 +35,8 @@ import chex
 import haiku as hk
 import jax
 import optax
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 
 
 # Type defs.
@@ -55,185 +60,223 @@ assert_equal_shape = chex.assert_equal_shape
 AlgoResultsTuple = tp.AlgoResultsTuple
 
 
-def get_optimizer(initial_learning_rate: float,
-                  boundaries_and_scales):
-  """Get an optimizer possibly with learning rate schedule."""
-  if boundaries_and_scales is None:
-    return optax.adam(initial_learning_rate)
-  else:
-    schedule_fn = optax.piecewise_constant_schedule(
-        initial_learning_rate,
-        boundaries_and_scales[0])
-    opt = optax.chain(optax.scale_by_adam(),
-                      optax.scale_by_schedule(schedule_fn), optax.scale(-1.))
-    return opt
+def get_optimizer(initial_learning_rate: float, boundaries_and_scales):
+    """Get an optimizer possibly with learning rate schedule."""
+    if boundaries_and_scales is None:
+        return optax.adam(initial_learning_rate)
+    else:
+        schedule_fn = optax.piecewise_constant_schedule(
+            initial_learning_rate, boundaries_and_scales[0]
+        )
+        opt = optax.chain(
+            optax.scale_by_adam(),
+            optax.scale_by_schedule(schedule_fn),
+            optax.scale(-1.0),
+        )
+        return opt
 
 
-def value_or_none(value: str,
-                  config):
-  if value in config:
-    return config[value]
-  else:
-    return None
+def value_or_none(value: str, config):
+    if value in config:
+        return config[value]
+    else:
+        return None
 
 
-def prepare_outer_loop(initial_sampler: InitialSampler,
-                       initial_log_density: Callable[[Array], Array],
-                       final_log_density: Callable[[Array], Array],
-                       flow_func: Callable[[Array], Tuple[Array, Array]],
-                       config) -> AlgoResultsTuple:
-  """Shared code outer loops then calls the outer loops themselves.
+def prepare_outer_loop(
+    initial_sampler: InitialSampler,
+    initial_log_density: Callable[[Array], Array],
+    final_log_density: Callable[[Array], Array],
+    flow_func: Callable[[Array], Tuple[Array, Array]],
+    config,
+    key,
+    logger,
+) -> AlgoResultsTuple:
+    """Shared code outer loops then calls the outer loops themselves.
 
-  Args:
-    initial_sampler: Function for producing initial sample.
-    initial_log_density: Function for evaluating initial log density.
-    final_log_density: Function for evaluating final log density.
-    flow_func: Flow function to pass to Haiku transform.
-    config: experiment configuration.
-  Returns:
-    An AlgoResultsTuple containing the experiment results.
+    Args:
+      initial_sampler: Function for producing initial sample.
+      initial_log_density: Function for evaluating initial log density.
+      final_log_density: Function for evaluating final log density.
+      flow_func: Flow function to pass to Haiku transform.
+      config: experiment configuration.
+    Returns:
+      An AlgoResultsTuple containing the experiment results.
 
-  """
-  num_temps = config.num_temps
-  if is_annealing_algorithm(config.algo):
-    density_by_step = flow_transport.GeometricAnnealingSchedule(
-        initial_log_density, final_log_density, num_temps)
-  if is_markov_algorithm(config.algo):
-    markov_kernel_by_step = markov_kernel.MarkovTransitionKernel(
-        config.mcmc_config, density_by_step, num_temps)
+    """
+    num_temps = config.num_temps
+    if is_annealing_algorithm(config.algo):
+        density_by_step = flow_transport.GeometricAnnealingSchedule(
+            initial_log_density, final_log_density, num_temps
+        )
+    if is_markov_algorithm(config.algo):
+        markov_kernel_by_step = markov_kernel.MarkovTransitionKernel(
+            config.mcmc_config, density_by_step, num_temps
+        )
 
-  key = jax.random.PRNGKey(config.seed)
+    flow_forward_fn = hk.without_apply_rng(hk.transform(flow_func))
+    key, subkey = jax.random.split(key)
+    single_normal_sample = initial_sampler(
+        subkey, config.batch_size, (config.num_dims,)
+    )
+    key, subkey = jax.random.split(key)
+    flow_init_params = flow_forward_fn.init(subkey, single_normal_sample)
 
-  flow_forward_fn = hk.without_apply_rng(hk.transform(flow_func))
-  key, subkey = jax.random.split(key)
-  single_normal_sample = initial_sampler(subkey,
-                                         config.batch_size,
-                                         config.sample_shape)
-  key, subkey = jax.random.split(key)
-  flow_init_params = flow_forward_fn.init(subkey,
-                                          single_normal_sample)
+    if value_or_none("save_checkpoint", config):
 
-  if value_or_none('save_checkpoint', config):
-    def save_checkpoint(params):
-      return serialize.save_checkpoint(config.params_filename, params)
-  else:
-    save_checkpoint = None
+        def save_checkpoint(params):
+            return serialize.save_checkpoint(config.params_filename, params)
 
-  if config.algo == 'vi':
-    # Add a save_checkpoint function here to enable saving final state.
-    opt = get_optimizer(
-        config.optimization_config.vi_step_size,
-        None)
-    opt_init_state = opt.init(flow_init_params)
-    results = vi.outer_loop_vi(initial_sampler=initial_sampler,
-                               opt_update=opt.update,
-                               opt_init_state=opt_init_state,
-                               flow_init_params=flow_init_params,
-                               flow_apply=flow_forward_fn.apply,
-                               key=key,
-                               initial_log_density=initial_log_density,
-                               final_log_density=final_log_density,
-                               config=config,
-                               save_checkpoint=save_checkpoint)
-  elif config.algo == 'smc':
-    results = smc.outer_loop_smc(density_by_step=density_by_step,
-                                 initial_sampler=initial_sampler,
-                                 markov_kernel_by_step=markov_kernel_by_step,
-                                 key=key,
-                                 config=config)
-  elif config.algo == 'snf':
-    opt = get_optimizer(
-        config.optimization_config.snf_step_size,
-        value_or_none('snf_boundaries_and_scales',
-                      config.optimization_config))
-    log_step_output = None
-    results = snf.outer_loop_snf(flow_init_params=flow_init_params,
-                                 flow_apply=flow_forward_fn.apply,
-                                 density_by_step=density_by_step,
-                                 markov_kernel_by_step=markov_kernel_by_step,
-                                 initial_sampler=initial_sampler,
-                                 key=key,
-                                 opt=opt,
-                                 config=config,
-                                 log_step_output=log_step_output,
-                                 save_checkpoint=save_checkpoint)
-  elif config.algo == 'aft':
-    opt = get_optimizer(
-        config.optimization_config.aft_step_size,
-        None)
-    opt_init_state = opt.init(flow_init_params)
-    # Add a log_step_output function here to enable non-trivial step logging.
-    log_step_output = None
-    results = aft.outer_loop_aft(opt_update=opt.update,
-                                 opt_init_state=opt_init_state,
-                                 flow_init_params=flow_init_params,
-                                 flow_apply=flow_forward_fn.apply,
-                                 density_by_step=density_by_step,
-                                 markov_kernel_by_step=markov_kernel_by_step,
-                                 initial_sampler=initial_sampler,
-                                 key=key,
-                                 config=config,
-                                 log_step_output=log_step_output)
-  elif config.algo == 'craft':
-    opt = get_optimizer(
-        config.optimization_config.craft_step_size,
-        value_or_none('craft_boundaries_and_scales',
-                      config.optimization_config))
-    opt_init_state = opt.init(flow_init_params)
-    log_step_output = None
-    results = craft.outer_loop_craft(
-        opt_update=opt.update,
-        opt_init_state=opt_init_state,
-        flow_init_params=flow_init_params,
-        flow_apply=flow_forward_fn.apply,
-        flow_inv_apply=None,
-        density_by_step=density_by_step,
-        markov_kernel_by_step=markov_kernel_by_step,
-        initial_sampler=initial_sampler,
-        key=key,
-        config=config,
-        log_step_output=log_step_output,
-        save_checkpoint=save_checkpoint)
-  else:
-    raise NotImplementedError
-  return results
+    else:
+        save_checkpoint = None
+
+    if config.algo == "vi":
+        # Add a save_checkpoint function here to enable saving final state.
+        opt = get_optimizer(config.optimization_config.vi_step_size, None)
+        opt_init_state = opt.init(flow_init_params)
+        results = vi.outer_loop_vi(
+            initial_sampler=initial_sampler,
+            opt_update=opt.update,
+            opt_init_state=opt_init_state,
+            flow_init_params=flow_init_params,
+            flow_apply=flow_forward_fn.apply,
+            key=key,
+            initial_log_density=initial_log_density,
+            final_log_density=final_log_density,
+            config=config,
+            save_checkpoint=save_checkpoint,
+        )
+    elif config.algo == "smc":
+        results = smc.outer_loop_smc(
+            density_by_step=density_by_step,
+            initial_sampler=initial_sampler,
+            markov_kernel_by_step=markov_kernel_by_step,
+            key=key,
+            config=config,
+        )
+    elif config.algo == "snf":
+        opt = get_optimizer(
+            config.optimization_config.snf_step_size,
+            value_or_none("snf_boundaries_and_scales", config.optimization_config),
+        )
+        log_step_output = None
+        results = snf.outer_loop_snf(
+            flow_init_params=flow_init_params,
+            flow_apply=flow_forward_fn.apply,
+            density_by_step=density_by_step,
+            markov_kernel_by_step=markov_kernel_by_step,
+            initial_sampler=initial_sampler,
+            key=key,
+            opt=opt,
+            config=config,
+            log_step_output=log_step_output,
+            save_checkpoint=save_checkpoint,
+        )
+    elif config.algo == "aft":
+        opt = get_optimizer(config.optimization_config.aft_step_size, None)
+        opt_init_state = opt.init(flow_init_params)
+        # Add a log_step_output function here to enable non-trivial step logging.
+        log_step_output = None
+        results = aft.outer_loop_aft(
+            opt_update=opt.update,
+            opt_init_state=opt_init_state,
+            flow_init_params=flow_init_params,
+            flow_apply=flow_forward_fn.apply,
+            density_by_step=density_by_step,
+            markov_kernel_by_step=markov_kernel_by_step,
+            initial_sampler=initial_sampler,
+            key=key,
+            config=config,
+            log_step_output=log_step_output,
+        )
+    elif config.algo == "craft":
+        opt = get_optimizer(
+            config.optimization_config.craft_step_size,
+            value_or_none("craft_boundaries_and_scales", config.optimization_config),
+        )
+        opt_init_state = opt.init(flow_init_params)
+        log_step_output = None
+        results = craft.outer_loop_craft(
+            opt_update=opt.update,
+            opt_init_state=opt_init_state,
+            flow_init_params=flow_init_params,
+            flow_apply=flow_forward_fn.apply,
+            flow_inv_apply=None,
+            density_by_step=density_by_step,
+            markov_kernel_by_step=markov_kernel_by_step,
+            initial_sampler=initial_sampler,
+            key=key,
+            config=config,
+            log_step_output=log_step_output,
+            save_checkpoint=save_checkpoint,
+            logger=logger,
+        )
+    else:
+        raise NotImplementedError
+    return results
 
 
 def is_flow_algorithm(algo_name):
-  return algo_name in ('aft', 'vi', 'craft', 'snf')
+    return algo_name in ("aft", "vi", "craft", "snf")
 
 
 def is_markov_algorithm(algo_name):
-  return algo_name in ('aft', 'craft', 'snf', 'smc')
+    return algo_name in ("aft", "craft", "snf", "smc")
 
 
 def is_annealing_algorithm(algo_name):
-  return algo_name in ('aft', 'craft', 'snf', 'smc')
+    return algo_name in ("aft", "craft", "snf", "smc")
 
 
 def run_experiment(config) -> AlgoResultsTuple:
-  """Run a SMC flow experiment.
+    """Run a SMC flow experiment.
 
-  Args:
-    config: experiment configuration.
-  Returns:
-    An AlgoResultsTuple containing the experiment results.
-  """
-  log_density_initial = getattr(densities, config.initial_config.density)(
-      config.initial_config, config.sample_shape)
-  log_density_final = getattr(densities, config.final_config.density)(
-      config.final_config, config.sample_shape)
-  initial_sampler = getattr(samplers,
-                            config.initial_sampler_config.initial_sampler)(
-                                config.initial_sampler_config)
+    Args:
+      config: experiment configuration.
+    Returns:
+      An AlgoResultsTuple containing the experiment results.
+    """
+    log.info("Starting up...")
+    log.info(f"Jax devices: {jax.devices()}")
+    run_path = os.getcwd()
+    log.info(f"Run path: {run_path}")
+    log.info(f"Hostname: {socket.gethostname()}")
+    ckpt_path = os.path.join(run_path, config.ckpt_dir)
+    os.makedirs(ckpt_path, exist_ok=True)
+    loggers = [instantiate(logger_cfg) for logger_cfg in config.logging.values()]
+    logger = LoggerCollection(loggers)
+    logger.log_hyperparams(OmegaConf.to_container(config, resolve=True))
 
-  def flow_func(x):
-    if is_flow_algorithm(config.algo):
-      flow = getattr(flows, config.flow_config.type)(config.flow_config)
-      return flow(x)
-    else:
-      return None
+    log_density_initial = getattr(densities, config.initial_config.density)(
+        config.initial_config, (config.num_dims,)
+    )
+    log_density_final = getattr(densities, config.final_config.density)(
+        config.final_config, (config.num_dims,)
+    )
+    initial_sampler = getattr(samplers, config.initial_sampler_config.initial_sampler)(
+        config.initial_sampler_config
+    )
 
-  results = prepare_outer_loop(initial_sampler, log_density_initial,
-                               log_density_final, flow_func, config)
-  return results
+    key = jax.random.PRNGKey(config.seed)
+
+    def flow_func(x):
+        if is_flow_algorithm(config.algo):
+            flow = getattr(flows, config.flow_config.type)(config.flow_config)
+            return flow(x)
+        else:
+            return None
+
+    results = prepare_outer_loop(
+        initial_sampler,
+        log_density_initial,
+        log_density_final,
+        flow_func,
+        config,
+        key,
+        logger,
+    )
+    logger.log_metrics({"final_log_Z_1_run": results.log_normalizer_estimate}, 0)
+
+    logger.save()
+    logger.finalize("success")
+    return results

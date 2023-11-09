@@ -1,0 +1,31 @@
+# @package _global_
+
+PROJECT_NAME: diffusion_smc
+
+defaults:
+  - _self_
+
+  - server: local
+  - logging: all
+
+  - experiment: difficult_gaussian
+  - method: smc
+
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+
+seed: 0
+
+work_dir: ${hydra:runtime.cwd}
+ckpt_dir: ckpt
+data_dir: ${work_dir}/data
+group: ${name}
+
+mode: train
+plot_train: True
+eval_train: True
+progress_bars: True
+report_step: 1
+
+batch_size: 2000
+

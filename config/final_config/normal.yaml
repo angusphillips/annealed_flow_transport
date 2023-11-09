@@ -1,0 +1,3 @@
+density: "NormalDistribution"
+loc: ${target_loc}
+scale: ${target_scale}

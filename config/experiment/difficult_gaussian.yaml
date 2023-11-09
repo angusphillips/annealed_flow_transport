@@ -1,0 +1,13 @@
+# @package _global_
+
+name: difficult_gaussian
+defaults:
+  - /initial_config: normal
+  - /final_config: normal
+  - /initial_sampler_config: normal
+
+
+# Target settings
+num_dims: 1
+target_loc: 2.75
+target_scale: 0.25
