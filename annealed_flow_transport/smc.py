@@ -165,6 +165,7 @@ def outer_loop_smc(
     markov_kernel_by_step: MarkovKernelApply,
     key: RandomKey,
     config,
+    logger,
 ) -> AlgoResultsTuple:
     """The outer loop for Annealed Flow Transport Monte Carlo.
 
@@ -219,6 +220,7 @@ def outer_loop_smc(
                 acceptance_hmc,
                 acceptance_rwm,
             )
+            logger.log_metrics({"acceptance_HMC": acceptance_hmc}, step=step)
 
     finish_time = time.time()
     delta_time = finish_time - start_time

@@ -1,10 +1,10 @@
 # @package _global_
 
-name: funnel
+name: lgcp
 defaults:
   - /initial_config: multivariate_normal
-  - /final_config: funnel
+  - /final_config: lgcp
   - /initial_sampler_config: multivariate_normal
-  - /mcmc_config: funnel
+  - /mcmc_config: lgcp
 
-num_dims: 10
+num_dims: 1600

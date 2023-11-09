@@ -1,10 +1,10 @@
 # @package _global_
 
-name: funnel
+name: two_dim_challenging
 defaults:
   - /initial_config: multivariate_normal
-  - /final_config: funnel
+  - /final_config: two_dim_challenging
   - /initial_sampler_config: multivariate_normal
-  - /mcmc_config: funnel
+  - /mcmc_config: two_dim_challenging
 
-num_dims: 10
+num_dims: 2

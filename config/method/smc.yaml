@@ -2,9 +2,6 @@
 
 algo: smc
 
-defaults:
-  - /mcmc_config: smc
-
 num_temps: 10
 
 use_resampling: True

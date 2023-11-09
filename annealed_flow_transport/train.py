@@ -153,6 +153,7 @@ def prepare_outer_loop(
             markov_kernel_by_step=markov_kernel_by_step,
             key=key,
             config=config,
+            logger=logger,
         )
     elif config.algo == "snf":
         opt = get_optimizer(

@@ -5,6 +5,7 @@ defaults:
   - /initial_config: normal
   - /final_config: normal
   - /initial_sampler_config: normal
+  - /mcmc_config: difficult_gaussian
 
 
 # Target settings
