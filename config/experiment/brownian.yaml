@@ -1,15 +1,16 @@
 # @package _global_
 
-name: lgcp
+name: brownian
 defaults:
   - /initial_config: multivariate_normal
-  - /final_config: lgcp
+  - /final_config: brownian
   - /initial_sampler_config: multivariate_normal
-  - /mcmc_config: lgcp
-  - /flow_config: lgcp
-  - /optimization_config: lgcp
+  - /mcmc_config: brownian
+  - /flow_config: brownian
+  - /optimization_config: brownian
+  
 
-num_dims: 1600
+num_dims: 32
 
 use_resampling: True
 resample_threshold: 0.3

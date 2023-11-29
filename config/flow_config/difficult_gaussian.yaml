@@ -1,0 +1,2 @@
+type: "DiagonalAffine"
+num_dims: ${num_dims}

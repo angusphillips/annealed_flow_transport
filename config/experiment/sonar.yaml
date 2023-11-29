@@ -1,15 +1,15 @@
 # @package _global_
 
-name: lgcp
+name: sonar
 defaults:
   - /initial_config: multivariate_normal
-  - /final_config: lgcp
+  - /final_config: sonar
   - /initial_sampler_config: multivariate_normal
-  - /mcmc_config: lgcp
-  - /flow_config: lgcp
-  - /optimization_config: lgcp
+  - /mcmc_config: sonar
+  - /flow_config: sonar
+  - /optimization_config: sonar
 
-num_dims: 1600
+num_dims: 61
 
 use_resampling: True
 resample_threshold: 0.3

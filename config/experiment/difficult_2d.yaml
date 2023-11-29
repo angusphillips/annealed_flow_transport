@@ -1,0 +1,24 @@
+# @package _global_
+
+name: difficult_2d
+defaults:
+  - /initial_config: multivariate_normal
+  - /final_config: two_dim_challenging
+  - /initial_sampler_config: multivariate_normal
+  - /mcmc_config: two_dim_challenging
+  - /flow_config: two_dim_challenging
+  - /optimization_config: two_dim_challenging
+
+num_dims: 2
+
+# method specific settings
+use_resampling: True
+resample_threshold: 0.3
+use_markov: True
+
+snf_batch_size: 2000
+snf_num_iters: 1000
+
+craft_batch_size: 2000
+craft_num_iters: 1000
+use_path_gradient: False

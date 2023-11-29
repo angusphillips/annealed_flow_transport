@@ -6,5 +6,15 @@ defaults:
   - /final_config: funnel
   - /initial_sampler_config: multivariate_normal
   - /mcmc_config: funnel
+  - /flow_config: funnel
+  - /optimization_config: funnel
 
 num_dims: 10
+
+use_resampling: True
+resample_threshold: 0.3
+
+use_markov: True
+craft_batch_size: 2000
+craft_num_iters: 1000
+use_path_gradient: False

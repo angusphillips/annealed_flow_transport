@@ -1,6 +1,5 @@
 # @package _global_
 
-algo: smc
+algo: snf
 
 num_temps: 10
-

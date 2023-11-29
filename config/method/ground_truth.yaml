@@ -2,5 +2,4 @@
 
 algo: smc
 
-num_temps: 10
-
+num_temps: 1000

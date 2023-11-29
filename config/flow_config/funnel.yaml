@@ -1,0 +1,9 @@
+type: "ComposedFlows"
+num_stack: 1
+base_flow_config:
+  type: "AffineInverseAutoregressiveFlow"
+  intermediate_hids_per_dim: 30
+  num_layers: 3
+  identity_init: True
+  bias_last: True
+flow_configs: None

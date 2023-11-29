@@ -135,6 +135,7 @@ def outer_loop_snf(
     config,
     log_step_output,
     save_checkpoint,
+    logger
 ):
     """Outer loop for Stochastic Normalizing Flows.
 
@@ -207,6 +208,7 @@ def outer_loop_snf(
                     log_weights=place_holder_array,
                 )
             logging.info("Step %05d: Free energy %f", step, vfe)
+            logger.log_metrics({'Free energy': vfe}, step=step)
 
     finish_time = time.time()
     delta_time = finish_time - start_time

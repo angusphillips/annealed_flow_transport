@@ -411,7 +411,13 @@ def outer_loop_craft(
                     overall_free_energy,
                     log_normalizer_estimate,
                 )
-                logger.log_metrics({"log_Z": log_normalizer_estimate}, step)
+                logger.log_metrics(
+                    {
+                        "Free energy": overall_free_energy,
+                        "log_Z": log_normalizer_estimate,
+                    },
+                    step,
+                )
 
     finish_time = time.time()
     delta_time = finish_time - start_time

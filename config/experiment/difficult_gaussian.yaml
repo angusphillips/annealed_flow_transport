@@ -6,9 +6,25 @@ defaults:
   - /final_config: normal
   - /initial_sampler_config: normal
   - /mcmc_config: difficult_gaussian
+  - /flow_config: difficult_gaussian
+  - /optimization_config: difficult_gaussian
 
 
 # Target settings
 num_dims: 1
 target_loc: 2.75
 target_scale: 0.25
+
+
+# method specific settings
+use_resampling: True
+resample_threshold: 0.3
+use_markov: True
+
+snf_batch_size: 2000
+snf_num_iters: 1000
+
+craft_batch_size: 2000
+craft_num_iters: 1000
+use_path_gradient: False
+

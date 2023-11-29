@@ -24,7 +24,7 @@ from annealed_flow_transport import train
 @hydra.main(config_path="config", config_name="main")
 def main(config):
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-    os.environ["WANDB_START_METHOD"] = "thread"
+    os.environ["WANDB_START_METHOD"] = "fork"
     train.run_experiment(config)
 
 

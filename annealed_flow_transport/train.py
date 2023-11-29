@@ -66,7 +66,7 @@ def get_optimizer(initial_learning_rate: float, boundaries_and_scales):
         return optax.adam(initial_learning_rate)
     else:
         schedule_fn = optax.piecewise_constant_schedule(
-            initial_learning_rate, boundaries_and_scales[0]
+            initial_learning_rate, boundaries_and_scales
         )
         opt = optax.chain(
             optax.scale_by_adam(),
@@ -79,6 +79,22 @@ def get_optimizer(initial_learning_rate: float, boundaries_and_scales):
 def value_or_none(value: str, config):
     if value in config:
         return config[value]
+    else:
+        return None
+
+
+def boundaries_and_scales(method, config):
+    if method + "_boundaries" in config:
+        if method == "snf":
+            snf_boundaries_and_scales = {}
+            for key, value in zip(config.snf_boundaries, config.snf_scales):
+                snf_boundaries_and_scales[key] = value
+            return craft_boundaries_and_scales
+        if method == "craft":
+            craft_boundaries_and_scales = {}
+            for key, value in zip(config.craft_boundaries, config.craft_scales):
+                craft_boundaries_and_scales[key] = value
+            return craft_boundaries_and_scales
     else:
         return None
 
@@ -158,7 +174,7 @@ def prepare_outer_loop(
     elif config.algo == "snf":
         opt = get_optimizer(
             config.optimization_config.snf_step_size,
-            value_or_none("snf_boundaries_and_scales", config.optimization_config),
+            boundaries_and_scales("snf", config.optimization_config),
         )
         log_step_output = None
         results = snf.outer_loop_snf(
@@ -172,6 +188,7 @@ def prepare_outer_loop(
             config=config,
             log_step_output=log_step_output,
             save_checkpoint=save_checkpoint,
+            logger=logger,
         )
     elif config.algo == "aft":
         opt = get_optimizer(config.optimization_config.aft_step_size, None)
@@ -193,7 +210,7 @@ def prepare_outer_loop(
     elif config.algo == "craft":
         opt = get_optimizer(
             config.optimization_config.craft_step_size,
-            value_or_none("craft_boundaries_and_scales", config.optimization_config),
+            boundaries_and_scales("craft", config.optimization_config),
         )
         opt_init_state = opt.init(flow_init_params)
         log_step_output = None
@@ -259,6 +276,11 @@ def run_experiment(config) -> AlgoResultsTuple:
     )
 
     key = jax.random.PRNGKey(config.seed)
+
+    if config.flow_config.type == "ComposedFlows":
+        config.flow_config.flow_configs = [
+            config.flow_config.base_flow_config
+        ] * config.flow_config.num_stack
 
     def flow_func(x):
         if is_flow_algorithm(config.algo):

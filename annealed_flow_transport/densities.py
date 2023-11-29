@@ -28,8 +28,10 @@ import jax.scipy.linalg as slinalg
 from jax.scipy.special import logsumexp
 from jax.scipy.stats import multivariate_normal
 from jax.scipy.stats import norm
+from jax.flatten_util import ravel_pytree
 import numpy as np
 import tensorflow_datasets as tfds
+import numpyro
 
 # TypeDefs
 NpArray = np.ndarray
@@ -39,6 +41,27 @@ Samples = tp.Samples
 SampleShape = tp.SampleShape
 
 assert_trees_all_equal = chex.assert_trees_all_equal
+
+
+def pad_with_const(x):
+    extra = np.ones((x.shape[0], 1))
+    return np.hstack([extra, x])
+
+
+def standardize_and_pad(x):
+    mean = np.mean(x, axis=0)
+    std = np.std(x, axis=0)
+    std[std == 0] = 1.0
+    x = (x - mean) / std
+    return pad_with_const(x)
+
+
+def load_data(path: str):
+    with open(path, mode="rb") as f:
+        x, y = pickle.load(f)
+    y = (y + 1) // 2
+    x = standardize_and_pad(x)
+    return x, y
 
 
 class LogDensity(metaclass=abc.ABCMeta):
@@ -531,3 +554,130 @@ class ManyWell(LogDensity):
         (num_batch, num_dim) = x.shape
         reshaped_x = jnp.reshape(x, (num_batch, num_dim // 2, 2))
         return jax.vmap(self.many_well_log_density)(reshaped_x)
+
+
+class BayesianLogisticRegression(LogDensity):
+    """Evalute the unnormalised log posterior
+    for a bayesian logistic regression model:
+    theta \sim N(0, I)
+    y | x, theta \sim Bernoulli(sigmoid(theta^T x))
+
+    Implementation adapted from Denoising Diffusion Samplers
+    https://arxiv.org/pdf/2302.13834.pdf
+    """
+
+    def __init__(self, config: ConfigDict, sample_shape: SampleShape):
+        def model(y_obs):
+            w = numpyro.sample(
+                "weights", numpyro.distributions.Normal(np.zeros(dim), np.ones(dim))
+            )
+            logits = jnp.dot(x, w)
+            with numpyro.plate("J", n_data):
+                _ = numpyro.sample(
+                    "y", numpyro.distributions.BernoulliLogits(logits), obs=y_obs
+                )
+
+        x, y_ = load_data(config.file_path)
+        dim = x.shape[1]
+        n_data = x.shape[0]
+        model_args = (y_,)
+
+        rng_key = jax.random.PRNGKey(1)
+        model_param_info, potential_fn, _, _ = numpyro.infer.util.initialize_model(
+            rng_key, model, model_args=model_args
+        )
+        params_flat, unflattener = ravel_pytree(model_param_info[0])
+
+        self.log_prob_model = lambda z: -1.0 * potential_fn(unflattener(z))
+        dim = params_flat.shape[0]
+
+        super().__init__(config, sample_shape)
+
+    def _check_constructor_inputs(self, config: ConfigDict, sample_shape: SampleShape):
+        if "ion" in config.file_path:
+            assert_trees_all_equal(sample_shape, (35,))
+        if "sonar" in config.file_path:
+            assert_trees_all_equal(sample_shape, (61,))
+
+    def evaluate_log_density(self, x: Array) -> Array:
+        return jax.vmap(self.log_prob_model, in_axes=0)(x)
+
+
+class BrownianMissingMiddleScales(LogDensity):
+    def __init__(self, config: ConfigDict, sample_shape: SampleShape):
+        self.observed_locs = np.array(
+            [
+                0.21592641,
+                0.118771404,
+                -0.07945447,
+                0.037677474,
+                -0.27885845,
+                -0.1484156,
+                -0.3250906,
+                -0.22957903,
+                -0.44110894,
+                -0.09830782,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                -0.8786016,
+                -0.83736074,
+                -0.7384849,
+                -0.8939254,
+                -0.7774566,
+                -0.70238715,
+                -0.87771565,
+                -0.51853573,
+                -0.6948214,
+                -0.6202789,
+            ]
+        ).astype(dtype=np.float32)
+
+        super().__init__(config, sample_shape)
+
+    def _check_constructor_inputs(self, config: ConfigDict, sample_shape: SampleShape):
+        assert_trees_all_equal(sample_shape, (32,))
+
+    def evaluate_log_density(self, x: Array) -> Array:
+        def unbatched(x_):
+            log_jacobian_term = -jnp.log(1 + jnp.exp(-x_[0])) - jnp.log(
+                1 + jnp.exp(-x_[1])
+            )
+            x_ = x_.at[0].set(jnp.log(1 + jnp.exp(x_[0])))
+            x_ = x_.at[1].set(jnp.log(1 + jnp.exp(x_[1])))
+            inn_noise_prior = jax.scipy.stats.norm.logpdf(
+                jnp.log(x_[0]), loc=0.0, scale=2
+            ) - jnp.log(x_[0])
+            obs_noise_prior = jax.scipy.stats.norm.logpdf(
+                jnp.log(x_[1]), loc=0.0, scale=2
+            ) - jnp.log(x_[1])
+            hidden_loc_0_prior = jax.scipy.stats.norm.logpdf(
+                x_[2], loc=0.0, scale=x_[0]
+            )
+            hidden_loc_priors = hidden_loc_0_prior
+            for i in range(29):
+                hidden_loc_priors += jax.scipy.stats.norm.logpdf(
+                    x_[i + 3], loc=x_[i + 2], scale=x_[0]
+                )
+            log_prior = inn_noise_prior + obs_noise_prior + hidden_loc_priors
+
+            inds_not_nan = np.argwhere(~np.isnan(self.observed_locs)).flatten()
+            log_lik = jax.vmap(
+                lambda x, y: jax.scipy.stats.norm.logpdf(y, loc=x, scale=x_[1])
+            )(x_[inds_not_nan + 2], self.observed_locs[inds_not_nan])
+
+            log_posterior = log_prior + jnp.sum(log_lik)
+
+            return log_posterior + log_jacobian_term
+
+        if len(x.shape) == 1:
+            return unbatched(x)
+        else:
+            return jax.vmap(unbatched)(x)

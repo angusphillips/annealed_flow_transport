@@ -1,15 +1,15 @@
 # @package _global_
 
-name: lgcp
+name: ion
 defaults:
   - /initial_config: multivariate_normal
-  - /final_config: lgcp
+  - /final_config: ion
   - /initial_sampler_config: multivariate_normal
-  - /mcmc_config: lgcp
-  - /flow_config: lgcp
-  - /optimization_config: lgcp
+  - /mcmc_config: ion
+  - /flow_config: ion
+  - /optimization_config: ion
 
-num_dims: 1600
+num_dims: 35
 
 use_resampling: True
 resample_threshold: 0.3
