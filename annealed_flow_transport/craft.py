@@ -432,4 +432,4 @@ def outer_loop_craft(
         delta_time=delta_time,
         initial_time_diff=initial_time_diff,
     )
-    return results
+    return results, transition_params

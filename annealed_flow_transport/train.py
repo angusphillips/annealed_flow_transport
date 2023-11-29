@@ -13,11 +13,14 @@
 # limitations under the License.
 
 """Training for all SMC and flow algorithms."""
+from functools import partial
 import os
 import socket
 from typing import Callable, Tuple
 
 from absl import logging as log
+import numpy as np
+import tqdm
 from annealed_flow_transport.loggers_pl import LoggerCollection
 from annealed_flow_transport import aft
 from annealed_flow_transport import craft
@@ -163,6 +166,32 @@ def prepare_outer_loop(
             save_checkpoint=save_checkpoint,
         )
     elif config.algo == "smc":
+        eval_sampler = jax.jit(
+            partial(
+                smc.fast_outer_loop_smc,
+                density_by_step=density_by_step,
+                initial_sampler=initial_sampler,
+                markov_kernel_by_step=markov_kernel_by_step,
+                config=config,
+            )
+        )
+        rng = jax.random.PRNGKey(config.seed)
+        log_Z = np.zeros(config.num_smc_iters)
+        for i in tqdm.tqdm(
+            range(config.num_smc_iters), disable=(not config.progress_bars)
+        ):
+            rng, rng_ = jax.random.split(rng)
+            results = eval_sampler(key=rng_)
+            log_Z[i] = results.log_normalizer_estimate
+        # Save normalising constant estimates (comment out when not doing a final evaluation run)
+        np.savetxt(
+            f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_smc_{config.num_temps}_{config.seed}.csv",
+            log_Z,
+        )
+        if logger:
+            logger.log_metrics(
+                {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
+            )
         results = smc.outer_loop_smc(
             density_by_step=density_by_step,
             initial_sampler=initial_sampler,
@@ -214,7 +243,7 @@ def prepare_outer_loop(
         )
         opt_init_state = opt.init(flow_init_params)
         log_step_output = None
-        results = craft.outer_loop_craft(
+        results, transition_params = craft.outer_loop_craft(
             opt_update=opt.update,
             opt_init_state=opt_init_state,
             flow_init_params=flow_init_params,
@@ -229,6 +258,35 @@ def prepare_outer_loop(
             save_checkpoint=save_checkpoint,
             logger=logger,
         )
+        eval_sampler = jax.jit(
+            partial(
+                craft.craft_evaluation_loop,
+                transition_params=transition_params,
+                flow_apply=flow_forward_fn.apply,
+                markov_kernel_apply=markov_kernel_by_step,
+                initial_sampler=initial_sampler,
+                log_density=density_by_step,
+                config=config,
+            )
+        )
+        rng = jax.random.PRNGKey(config.seed)
+        log_Z = np.zeros(config.num_smc_iters)
+        for i in tqdm.tqdm(
+            range(config.num_smc_iters), disable=(not config.progress_bars)
+        ):
+            rng, rng_ = jax.random.split(rng)
+            eval_results = eval_sampler(key=rng_)
+            log_Z[i] = eval_results.log_normalizer_estimate
+        # Save normalising constant estimates (comment out when not doing a final evaluation run)
+        np.savetxt(
+            f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_craft_{config.num_temps}_{config.seed}.csv",
+            log_Z,
+        )
+        if logger:
+            logger.log_metrics(
+                {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
+            )
+
     else:
         raise NotImplementedError
     return results
@@ -298,7 +356,6 @@ def run_experiment(config) -> AlgoResultsTuple:
         key,
         logger,
     )
-    logger.log_metrics({"final_log_Z_1_run": results.log_normalizer_estimate}, 0)
 
     logger.save()
     logger.finalize("success")

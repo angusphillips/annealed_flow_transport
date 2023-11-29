@@ -28,4 +28,4 @@ progress_bars: True
 report_step: 1
 
 batch_size: 2000
-
+num_smc_iters: 100
