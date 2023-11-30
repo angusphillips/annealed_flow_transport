@@ -29,5 +29,5 @@ hydra:
       "wckey": "wck_${oc.env:USER}",
       "gres": "gpu:${num_gpus}",
       # "nodelist": "zizgpu05.cpu.stats.ox.ac.uk"
-      # "exclude": "zizgpu01.cpu.stats.ox.ac.uk"
+      "exclude": "zizgpu01.cpu.stats.ox.ac.uk"
     }

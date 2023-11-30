@@ -113,8 +113,8 @@ def inner_loop_snf(
         return next_passed_state, per_step_output
 
     initial_state = (initial_samples, initial_log_weights)
-    inner_steps = jnp.arange(1, config.num_temps)
-    keys = jax.random.split(key, config.num_temps - 1)
+    inner_steps = jnp.arange(1, config.num_steps + 1)
+    keys = jax.random.split(key, config.num_steps)
     per_step_inputs = (transition_params, keys, inner_steps)
     unused_final_state, per_step_outputs = jax.lax.scan(
         scan_step, initial_state, per_step_inputs
@@ -135,7 +135,7 @@ def outer_loop_snf(
     config,
     log_step_output,
     save_checkpoint,
-    logger
+    logger,
 ):
     """Outer loop for Stochastic Normalizing Flows.
 
@@ -153,7 +153,7 @@ def outer_loop_snf(
     Returns:
       An AlgoResults tuple containing a summary of the results.
     """
-    num_temps = config.num_temps
+    num_temps = config.num_steps + 1
 
     def short_inner_loop(curr_transition_params, rng_key: RandomKey):
         return inner_loop_snf(
@@ -208,7 +208,7 @@ def outer_loop_snf(
                     log_weights=place_holder_array,
                 )
             logging.info("Step %05d: Free energy %f", step, vfe)
-            logger.log_metrics({'Free energy': vfe}, step=step)
+            logger.log_metrics({"Free energy": vfe}, step=step)
 
     finish_time = time.time()
     delta_time = finish_time - start_time

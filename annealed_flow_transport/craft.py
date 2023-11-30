@@ -183,8 +183,8 @@ def inner_loop_craft(
         return next_passed_state, per_step_output
 
     initial_state = (initial_samples, initial_log_weights)
-    inner_steps = jnp.arange(1, config.num_temps)
-    keys = jax.random.split(key, config.num_temps - 1)
+    inner_steps = jnp.arange(1, config.num_steps + 1)
+    keys = jax.random.split(key, config.num_steps)
     per_step_inputs = (transition_params, keys, inner_steps)
     final_state, per_step_outputs = jax.lax.scan(
         scan_step, initial_state, per_step_inputs
@@ -284,8 +284,8 @@ def craft_evaluation_loop(
         return next_passed_state, per_step_output
 
     initial_state = (initial_samples, initial_log_weights)
-    inner_steps = jnp.arange(1, config.num_temps)
-    keys = jax.random.split(key, config.num_temps - 1)
+    inner_steps = jnp.arange(1, config.num_steps + 1)
+    keys = jax.random.split(key, config.num_steps)
     per_step_inputs = (transition_params, keys, inner_steps)
     final_state, per_step_outputs = jax.lax.scan(
         scan_step, initial_state, per_step_inputs
@@ -334,7 +334,7 @@ def outer_loop_craft(
     Returns:
       An AlgoResults tuple containing a summary of the results.
     """
-    num_temps = config.num_temps
+    num_temps = config.num_steps + 1
 
     def free_energy_short(
         flow_params: FlowParams, samples: Samples, log_weights: Array, step: int

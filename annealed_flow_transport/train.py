@@ -123,7 +123,7 @@ def prepare_outer_loop(
       An AlgoResultsTuple containing the experiment results.
 
     """
-    num_temps = config.num_temps
+    num_temps = config.num_steps + 1
     if is_annealing_algorithm(config.algo):
         density_by_step = flow_transport.GeometricAnnealingSchedule(
             initial_log_density, final_log_density, num_temps
@@ -185,7 +185,7 @@ def prepare_outer_loop(
             log_Z[i] = results.log_normalizer_estimate
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         np.savetxt(
-            f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_smc_{config.num_temps}_{config.seed}.csv",
+            f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_smc_{config.num_steps}_{config.seed}.csv",
             log_Z,
         )
         if logger:

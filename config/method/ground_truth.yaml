@@ -2,4 +2,4 @@
 
 algo: smc
 
-num_temps: 1000
+num_steps: 1000

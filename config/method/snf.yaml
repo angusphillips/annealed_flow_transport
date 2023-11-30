@@ -2,4 +2,4 @@
 
 algo: snf
 
-num_temps: 10
+num_steps: 10
