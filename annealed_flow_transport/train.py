@@ -186,7 +186,7 @@ def prepare_outer_loop(
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_smc_{config.num_steps}_{config.seed}.csv",
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_data/{config.group}_{config.name}_smc_{config.num_steps}_{config.seed}.csv",
                 log_Z,
             )
         if logger:
@@ -282,7 +282,7 @@ def prepare_outer_loop(
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_craft_{config.num_steps}_{config.seed}.csv",
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_data/{config.group}_{config.name}_craft_{config.num_steps}_{config.seed}.csv",
                 log_Z,
             )
         if logger:

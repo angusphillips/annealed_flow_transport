@@ -210,17 +210,22 @@ def outer_loop_smc(
         )
         acceptance_hmc = float(np.asarray(acceptance[0]))
         acceptance_rwm = float(np.asarray(acceptance[1]))
+        acceptance_nuts = float(np.asarray(acceptance[2]))
+
         log_normalizer_estimate += log_normalizer_increment
         if step % config.report_step == 0:
             beta = density_by_step.get_beta(step)  # pytype: disable=attribute-error
             logging.info(
-                "Step %05d: beta %f Acceptance rate HMC %f Acceptance rate RWM %f",
+                "Step %05d: beta %f Acceptance rate HMC %f Acceptance rate RWM %f Acceptance rate NUTS %f",
                 step,
                 beta,
                 acceptance_hmc,
                 acceptance_rwm,
+                acceptance_nuts
             )
             logger.log_metrics({"acceptance_HMC": acceptance_hmc}, step=beta)
+            logger.log_metrics({'acceptance_NUTS': acceptance_nuts}, step=beta)
+            
 
     finish_time = time.time()
     delta_time = finish_time - start_time

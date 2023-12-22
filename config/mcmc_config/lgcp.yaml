@@ -1,6 +1,10 @@
 hmc_step_config:
   step_times: [0.0, 0.25, 0.5, 1.0]
   step_sizes: [0.3, 0.3, 0.2, 0.2]
-hmc_steps_per_iter: 1
+nuts_step_config:
+  step_times: [0.0, 0.25, 0.5, 1.0]
+  step_sizes: [0.3, 0.3, 0.2, 0.2]
+nuts_steps_per_iter: 1
+hmc_steps_per_iter: 0
 rwm_steps_per_iter: 0
 hmc_num_leapfrog_steps: 10
