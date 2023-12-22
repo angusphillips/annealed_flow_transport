@@ -184,10 +184,11 @@ def prepare_outer_loop(
             results = eval_sampler(key=rng_)
             log_Z[i] = results.log_normalizer_estimate
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
-        np.savetxt(
-            f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_smc_{config.num_steps}_{config.seed}.csv",
-            log_Z,
-        )
+        if config.save_samples:
+            np.savetxt(
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_smc_{config.num_steps}_{config.seed}.csv",
+                log_Z,
+            )
         if logger:
             logger.log_metrics(
                 {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
@@ -242,6 +243,7 @@ def prepare_outer_loop(
             boundaries_and_scales("craft", config.optimization_config),
         )
         opt_init_state = opt.init(flow_init_params)
+        print(flow_init_params)
         log_step_output = None
         results, transition_params = craft.outer_loop_craft(
             opt_update=opt.update,
@@ -278,10 +280,11 @@ def prepare_outer_loop(
             eval_results = eval_sampler(key=rng_)
             log_Z[i] = eval_results.log_normalizer_estimate
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
-        np.savetxt(
-            f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_craft_{config.num_temps}_{config.seed}.csv",
-            log_Z,
-        )
+        if config.save_samples:
+            np.savetxt(
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_results/{config.group}_{config.name}_craft_{config.num_steps}_{config.seed}.csv",
+                log_Z,
+            )
         if logger:
             logger.log_metrics(
                 {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
