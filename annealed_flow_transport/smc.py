@@ -221,15 +221,15 @@ def outer_loop_smc(
                 beta,
                 acceptance_hmc,
                 acceptance_rwm,
-                acceptance_nuts
+                acceptance_nuts,
             )
             logger.log_metrics({"acceptance_HMC": acceptance_hmc}, step=beta)
-            logger.log_metrics({'acceptance_NUTS': acceptance_nuts}, step=beta)
-            
+            logger.log_metrics({"acceptance_NUTS": acceptance_nuts}, step=beta)
 
     finish_time = time.time()
     delta_time = finish_time - start_time
-    logging.info("Delta time / seconds  %f: ", delta_time)
+    logging.info("Sampling time / seconds  %f: ", delta_time)
+    # logger.log_metrics({"sampling_time": delta_time}, step=0)
     logging.info("Log normalizer estimate %f: ", log_normalizer_estimate)
     results = AlgoResultsTuple(
         test_samples=samples,

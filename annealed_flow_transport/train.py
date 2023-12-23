@@ -16,6 +16,7 @@
 from functools import partial
 import os
 import socket
+import time
 from typing import Callable, Tuple
 
 from absl import logging as log
@@ -177,12 +178,14 @@ def prepare_outer_loop(
         )
         rng = jax.random.PRNGKey(config.seed)
         log_Z = np.zeros(config.num_smc_iters)
+        start_time = time.time()
         for i in tqdm.tqdm(
             range(config.num_smc_iters), disable=(not config.progress_bars)
         ):
             rng, rng_ = jax.random.split(rng)
             results = eval_sampler(key=rng_)
             log_Z[i] = results.log_normalizer_estimate
+        end_time = time.time()
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
@@ -190,6 +193,10 @@ def prepare_outer_loop(
                 log_Z,
             )
         if logger:
+            logger.log_metrics(
+                {"sampling_time": (end_time - start_time) / config.smc_num_iters},
+                step=0,
+            )
             logger.log_metrics(
                 {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
             )
@@ -273,12 +280,14 @@ def prepare_outer_loop(
         )
         rng = jax.random.PRNGKey(config.seed)
         log_Z = np.zeros(config.num_smc_iters)
+        start_time = time.time()
         for i in tqdm.tqdm(
             range(config.num_smc_iters), disable=(not config.progress_bars)
         ):
             rng, rng_ = jax.random.split(rng)
             eval_results = eval_sampler(key=rng_)
             log_Z[i] = eval_results.log_normalizer_estimate
+        end_time = time.time()
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
@@ -286,6 +295,10 @@ def prepare_outer_loop(
                 log_Z,
             )
         if logger:
+            logger.log_metrics(
+                {"sampling_time": (end_time - start_time) / config.smc_num_iters},
+                step=0,
+            )
             logger.log_metrics(
                 {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
             )

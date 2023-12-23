@@ -421,7 +421,8 @@ def outer_loop_craft(
 
     finish_time = time.time()
     delta_time = finish_time - start_time
-    log.info("Delta time / seconds  %f: ", delta_time)
+    log.info("Training time / seconds  %f: ", delta_time)
+    logger.log_metrics({"training_time": delta_time}, step=0)
     log.info("Log normalizer estimate %f: ", log_normalizer_estimate)
     if save_checkpoint:
         save_checkpoint(transition_params)
