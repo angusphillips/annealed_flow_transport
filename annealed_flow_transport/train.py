@@ -150,6 +150,10 @@ def prepare_outer_loop(
     else:
         save_checkpoint = None
 
+    nb_params = sum(x.size for x in jax.tree_util.tree_leaves(flow_init_params))
+    log.info(f"Number of parameters: {nb_params * config.num_steps}")
+    logger.log_metrics({"nb_params": nb_params * config.num_steps}, 0)
+
     if config.algo == "vi":
         # Add a save_checkpoint function here to enable saving final state.
         opt = get_optimizer(config.optimization_config.vi_step_size, None)
@@ -194,7 +198,7 @@ def prepare_outer_loop(
             )
         if logger:
             logger.log_metrics(
-                {"sampling_time": (end_time - start_time) / config.smc_num_iters},
+                {"sampling_time": (end_time - start_time) / config.num_smc_iters},
                 step=0,
             )
             logger.log_metrics(
@@ -250,7 +254,6 @@ def prepare_outer_loop(
             boundaries_and_scales("craft", config.optimization_config),
         )
         opt_init_state = opt.init(flow_init_params)
-        print(flow_init_params)
         log_step_output = None
         results, transition_params = craft.outer_loop_craft(
             opt_update=opt.update,
@@ -296,7 +299,7 @@ def prepare_outer_loop(
             )
         if logger:
             logger.log_metrics(
-                {"sampling_time": (end_time - start_time) / config.smc_num_iters},
+                {"sampling_time": (end_time - start_time) / config.num_smc_iters},
                 step=0,
             )
             logger.log_metrics(
