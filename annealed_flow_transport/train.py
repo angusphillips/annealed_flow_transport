@@ -154,7 +154,7 @@ def prepare_outer_loop(
     log.info(f"Number of parameters: {nb_params * config.num_steps}")
     logger.log_metrics({"nb_params": nb_params * config.num_steps}, 0)
 
-    if config.algo == "vi":
+    if config.algo == "vi":  # Note converted to stateful
         # Add a save_checkpoint function here to enable saving final state.
         opt = get_optimizer(config.optimization_config.vi_step_size, None)
         opt_init_state = opt.init(flow_init_params)
@@ -178,6 +178,7 @@ def prepare_outer_loop(
                 initial_sampler=initial_sampler,
                 markov_kernel_by_step=markov_kernel_by_step,
                 config=config,
+                density_state=0,
             )
         )
         rng = jax.random.PRNGKey(config.seed)
@@ -187,7 +188,7 @@ def prepare_outer_loop(
             range(config.num_smc_iters), disable=(not config.progress_bars)
         ):
             rng, rng_ = jax.random.split(rng)
-            results = eval_sampler(key=rng_)
+            results, sampling_density_calls = eval_sampler(key=rng_)
             log_Z[i] = results.log_normalizer_estimate
         end_time = time.time()
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
@@ -198,21 +199,25 @@ def prepare_outer_loop(
             )
         if logger:
             logger.log_metrics(
-                {"sampling_time": (end_time - start_time) / config.num_smc_iters},
+                {
+                    "sampling_time": (end_time - start_time) / config.num_smc_iters,
+                    "sampling_density_calls": sampling_density_calls,
+                },
                 step=0,
             )
             logger.log_metrics(
                 {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
             )
-        results = smc.outer_loop_smc(
+        results, _ = smc.outer_loop_smc(
             density_by_step=density_by_step,
             initial_sampler=initial_sampler,
             markov_kernel_by_step=markov_kernel_by_step,
             key=key,
             config=config,
             logger=logger,
+            density_state=0,
         )
-    elif config.algo == "snf":
+    elif config.algo == "snf":  # Not converted to stateful
         opt = get_optimizer(
             config.optimization_config.snf_step_size,
             boundaries_and_scales("snf", config.optimization_config),
@@ -231,7 +236,7 @@ def prepare_outer_loop(
             save_checkpoint=save_checkpoint,
             logger=logger,
         )
-    elif config.algo == "aft":
+    elif config.algo == "aft":  # Not converted to stateful
         opt = get_optimizer(config.optimization_config.aft_step_size, None)
         opt_init_state = opt.init(flow_init_params)
         # Add a log_step_output function here to enable non-trivial step logging.
@@ -265,6 +270,7 @@ def prepare_outer_loop(
             markov_kernel_by_step=markov_kernel_by_step,
             initial_sampler=initial_sampler,
             key=key,
+            density_state=0,
             config=config,
             log_step_output=log_step_output,
             save_checkpoint=save_checkpoint,
@@ -278,6 +284,7 @@ def prepare_outer_loop(
                 markov_kernel_apply=markov_kernel_by_step,
                 initial_sampler=initial_sampler,
                 log_density=density_by_step,
+                density_state=0,
                 config=config,
             )
         )
@@ -288,7 +295,7 @@ def prepare_outer_loop(
             range(config.num_smc_iters), disable=(not config.progress_bars)
         ):
             rng, rng_ = jax.random.split(rng)
-            eval_results = eval_sampler(key=rng_)
+            eval_results, sampling_density_calls = eval_sampler(key=rng_)
             log_Z[i] = eval_results.log_normalizer_estimate
         end_time = time.time()
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
@@ -299,7 +306,10 @@ def prepare_outer_loop(
             )
         if logger:
             logger.log_metrics(
-                {"sampling_time": (end_time - start_time) / config.num_smc_iters},
+                {
+                    "sampling_time": (end_time - start_time) / config.num_smc_iters,
+                    "sampling_density_calls": sampling_density_calls,
+                },
                 step=0,
             )
             logger.log_metrics(
@@ -343,10 +353,10 @@ def run_experiment(config) -> AlgoResultsTuple:
     logger.log_hyperparams(OmegaConf.to_container(config, resolve=True))
 
     log_density_initial = getattr(densities, config.initial_config.density)(
-        config.initial_config, (config.num_dims,)
+        config.initial_config, (config.num_dims,), is_target=False
     )
     log_density_final = getattr(densities, config.final_config.density)(
-        config.final_config, (config.num_dims,)
+        config.final_config, (config.num_dims,), is_target=True
     )
     initial_sampler = getattr(samplers, config.initial_sampler_config.initial_sampler)(
         config.initial_sampler_config

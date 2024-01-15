@@ -53,8 +53,9 @@ def inner_step_craft(
     log_weights: Array,
     log_density: LogDensityByStep,
     step: int,
+    density_state: int,
     config,
-) -> Tuple[FlowParams, Array, Array, Samples, Array, AcceptanceTuple]:
+) -> Tuple[FlowParams, Array, Array, Samples, Array, AcceptanceTuple, int]:
     """A temperature step of CRAFT.
 
     Args:
@@ -77,14 +78,20 @@ def inner_step_craft(
       new_log_weights: log_weights after temperature step has been performed.
       acceptance_tuple: Acceptance rate of the Markov kernels used.
     """
-    vfe, flow_grads = free_energy_and_grad(flow_params, samples, log_weights, step)
-    log_normalizer_increment = flow_transport.get_log_normalizer_increment(
-        samples, log_weights, flow_apply, flow_params, log_density, step
+    (vfe, density_state), flow_grads = free_energy_and_grad(
+        flow_params, samples, log_weights, step, density_state
+    )
+    (
+        log_normalizer_increment,
+        density_state,
+    ) = flow_transport.get_log_normalizer_increment(
+        samples, log_weights, flow_apply, flow_params, log_density, step, density_state
     )
     (
         next_samples,
         next_log_weights,
         acceptance_tuple,
+        density_state,
     ) = flow_transport.update_samples_log_weights(
         flow_apply=flow_apply,
         markov_kernel_apply=markov_kernel_apply,
@@ -97,6 +104,7 @@ def inner_step_craft(
         use_resampling=config.use_resampling,
         use_markov=config.use_markov,
         resample_threshold=config.resample_threshold,
+        density_state=density_state,
     )
 
     return (
@@ -106,6 +114,7 @@ def inner_step_craft(
         next_samples,
         next_log_weights,
         acceptance_tuple,
+        density_state,
     )
 
 
@@ -119,6 +128,7 @@ def inner_loop_craft(
     markov_kernel_apply: MarkovKernelApply,
     initial_sampler: InitialSampler,
     log_density: LogDensityByStep,
+    density_state: int,
     config,
     axis_name=None,
 ):
@@ -157,7 +167,7 @@ def inner_loop_craft(
     )
 
     def scan_step(passed_state, per_step_input):
-        samples, log_weights = passed_state
+        samples, log_weights, density_state = passed_state
         flow_params, key, inner_step = per_step_input
         (
             flow_grads,
@@ -166,6 +176,7 @@ def inner_loop_craft(
             next_samples,
             next_log_weights,
             acceptance_tuple,
+            density_state,
         ) = inner_step_craft(
             key=key,
             free_energy_and_grad=free_energy_and_grad,
@@ -176,20 +187,21 @@ def inner_loop_craft(
             log_weights=log_weights,
             log_density=log_density,
             step=inner_step,
+            density_state=density_state,
             config=config,
         )
-        next_passed_state = (next_samples, next_log_weights)
+        next_passed_state = (next_samples, next_log_weights, density_state)
         per_step_output = (flow_grads, vfe, log_normalizer_increment, acceptance_tuple)
         return next_passed_state, per_step_output
 
-    initial_state = (initial_samples, initial_log_weights)
+    initial_state = (initial_samples, initial_log_weights, density_state)
     inner_steps = jnp.arange(1, config.num_steps + 1)
     keys = jax.random.split(key, config.num_steps)
     per_step_inputs = (transition_params, keys, inner_steps)
     final_state, per_step_outputs = jax.lax.scan(
         scan_step, initial_state, per_step_inputs
     )
-    final_samples, final_log_weights = final_state
+    final_samples, final_log_weights, density_state = final_state
     (
         flow_grads,
         free_energies,
@@ -219,6 +231,7 @@ def inner_loop_craft(
         final_opt_states,
         overall_free_energy,
         log_normalizer_estimate,
+        density_state,
     )
 
 
@@ -229,6 +242,7 @@ def craft_evaluation_loop(
     markov_kernel_apply: MarkovKernelApply,
     initial_sampler: InitialSampler,
     log_density: LogDensityByStep,
+    density_state: int,
     config,
 ) -> ParticleState:
     """A single pass of CRAFT with fixed flows.
@@ -257,15 +271,25 @@ def craft_evaluation_loop(
     )
 
     def scan_step(passed_state, per_step_input):
-        samples, log_weights = passed_state
+        samples, log_weights, density_state = passed_state
         flow_params, key, inner_step = per_step_input
-        log_normalizer_increment = flow_transport.get_log_normalizer_increment(
-            samples, log_weights, flow_apply, flow_params, log_density, inner_step
+        (
+            log_normalizer_increment,
+            density_state,
+        ) = flow_transport.get_log_normalizer_increment(
+            samples,
+            log_weights,
+            flow_apply,
+            flow_params,
+            log_density,
+            inner_step,
+            density_state,
         )
         (
             next_samples,
             next_log_weights,
             acceptance_tuple,
+            density_state,
         ) = flow_transport.update_samples_log_weights(
             flow_apply=flow_apply,
             markov_kernel_apply=markov_kernel_apply,
@@ -278,19 +302,20 @@ def craft_evaluation_loop(
             use_resampling=config.use_resampling,
             use_markov=config.use_markov,
             resample_threshold=config.resample_threshold,
+            density_state=density_state,
         )
-        next_passed_state = (next_samples, next_log_weights)
+        next_passed_state = (next_samples, next_log_weights, density_state)
         per_step_output = (log_normalizer_increment, acceptance_tuple)
         return next_passed_state, per_step_output
 
-    initial_state = (initial_samples, initial_log_weights)
+    initial_state = (initial_samples, initial_log_weights, density_state)
     inner_steps = jnp.arange(1, config.num_steps + 1)
     keys = jax.random.split(key, config.num_steps)
     per_step_inputs = (transition_params, keys, inner_steps)
     final_state, per_step_outputs = jax.lax.scan(
         scan_step, initial_state, per_step_inputs
     )
-    final_samples, final_log_weights = final_state
+    final_samples, final_log_weights, density_state = final_state
     log_normalizer_increments, unused_acceptance_tuples = per_step_outputs
     log_normalizer_estimate = jnp.sum(log_normalizer_increments)
     particle_state = ParticleState(
@@ -298,7 +323,7 @@ def craft_evaluation_loop(
         log_weights=final_log_weights,
         log_normalizer_estimate=log_normalizer_estimate,
     )
-    return particle_state
+    return particle_state, density_state
 
 
 def outer_loop_craft(
@@ -311,6 +336,7 @@ def outer_loop_craft(
     markov_kernel_by_step: MarkovKernelApply,
     initial_sampler: InitialSampler,
     key: RandomKey,
+    density_state: int,
     config,
     log_step_output,
     save_checkpoint,
@@ -337,8 +363,12 @@ def outer_loop_craft(
     num_temps = config.num_steps + 1
 
     def free_energy_short(
-        flow_params: FlowParams, samples: Samples, log_weights: Array, step: int
-    ) -> Array:
+        flow_params: FlowParams,
+        samples: Samples,
+        log_weights: Array,
+        step: int,
+        density_state: int,
+    ) -> tp.Tuple[Array, int]:
         return flow_transport.transport_free_energy_estimator(
             samples,
             log_weights,
@@ -348,12 +378,16 @@ def outer_loop_craft(
             density_by_step,
             step,
             config.use_path_gradient,
+            density_state=density_state,
         )
 
-    free_energy_and_grad = jax.value_and_grad(free_energy_short)
+    free_energy_and_grad = jax.value_and_grad(free_energy_short, has_aux=True)
 
     def short_inner_loop(
-        rng_key: RandomKey, curr_opt_states: OptState, curr_transition_params
+        rng_key: RandomKey,
+        curr_opt_states: OptState,
+        curr_transition_params,
+        density_state: int,
     ):
         return inner_loop_craft(
             key=rng_key,
@@ -365,6 +399,7 @@ def outer_loop_craft(
             markov_kernel_apply=markov_kernel_by_step,
             initial_sampler=initial_sampler,
             log_density=density_by_step,
+            density_state=density_state,
             config=config,
         )
 
@@ -376,7 +411,7 @@ def outer_loop_craft(
 
     log.info("Performing initial step redundantly for accurate timing...")
     initial_start_time = time.time()
-    inner_loop_jit(key, opt_states, transition_params)
+    inner_loop_jit(key, opt_states, transition_params, density_state)
     initial_finish_time = time.time()
     initial_time_diff = initial_finish_time - initial_start_time
     log.info("Initial step time / seconds  %f: ", initial_time_diff)
@@ -393,7 +428,8 @@ def outer_loop_craft(
                 opt_states,
                 overall_free_energy,
                 log_normalizer_estimate,
-            ) = inner_loop_jit(subkey, opt_states, transition_params)
+                density_state,
+            ) = inner_loop_jit(subkey, opt_states, transition_params, density_state)
             if step % config.report_step == 0:
                 if log_step_output is not None:
                     delta_time = time.time() - start_time
@@ -415,6 +451,7 @@ def outer_loop_craft(
                     {
                         "Free energy": overall_free_energy,
                         "log_Z": log_normalizer_estimate,
+                        "density_calls": density_state,
                     },
                     step,
                 )

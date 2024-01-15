@@ -52,8 +52,9 @@ def inner_loop(
     log_weights: Array,
     log_density: LogDensityByStep,
     step: int,
+    density_state: int,
     config,
-) -> Tuple[Array, Array, Array, Array]:
+) -> Tuple[Array, Array, Array, Array, int]:
     """Inner loop of the algorithm.
 
     Args:
@@ -72,7 +73,9 @@ def inner_loop(
       Acceptance_rates: Acceptance rates of samplers.
     """
 
-    deltas = flow_transport.get_delta_no_flow(samples, log_density, step)
+    deltas, density_state = flow_transport.get_delta_no_flow(
+        samples, log_density, step, density_state
+    )
     log_normalizer_increment = flow_transport.get_log_normalizer_increment_no_flow(
         deltas, log_weights
     )
@@ -87,13 +90,16 @@ def inner_loop(
     else:
         resampled_samples = samples
         log_weights_resampled = log_weights_new
-    markov_samples, acceptance_tuple = markov_kernel_apply(step, key, resampled_samples)
+    markov_samples, acceptance_tuple, density_state = markov_kernel_apply(
+        step, key, resampled_samples, density_state
+    )
 
     return (
         markov_samples,
         log_weights_resampled,
         log_normalizer_increment,
         acceptance_tuple,
+        density_state,
     )
 
 
@@ -103,7 +109,11 @@ def get_short_inner_loop(
     """Get a short version of inner loop."""
 
     def short_inner_loop(
-        rng_key: RandomKey, loc_samples: Array, loc_log_weights: Array, loc_step: int
+        rng_key: RandomKey,
+        loc_samples: Array,
+        loc_log_weights: Array,
+        loc_step: int,
+        density_state: int,
     ):
         return inner_loop(
             rng_key,
@@ -112,6 +122,7 @@ def get_short_inner_loop(
             loc_log_weights,
             density_by_step,
             loc_step,
+            density_state,
             config,
         )
 
@@ -123,6 +134,7 @@ def fast_outer_loop_smc(
     initial_sampler: InitialSampler,
     markov_kernel_by_step: MarkovKernelApply,
     key: RandomKey,
+    density_state: int,
     config,
 ) -> ParticleState:
     """A fast SMC loop for evaluation or use inside other algorithms."""
@@ -137,26 +149,33 @@ def fast_outer_loop_smc(
     keys = jax.random.split(key, config.num_steps)
 
     def scan_step(passed_state, per_step_input):
-        samples, log_weights = passed_state
+        samples, log_weights, density_state = passed_state
         current_step, current_key = per_step_input
-        new_samples, new_log_weights, log_z_increment, _ = short_inner_loop(
-            current_key, samples, log_weights, current_step
+        (
+            new_samples,
+            new_log_weights,
+            log_z_increment,
+            _,
+            density_state,
+        ) = short_inner_loop(
+            current_key, samples, log_weights, current_step, density_state
         )
-        new_passed_state = (new_samples, new_log_weights)
+        new_passed_state = (new_samples, new_log_weights, density_state)
         return new_passed_state, log_z_increment
 
-    init_state = (samples, log_weights)
+    init_state = (samples, log_weights, density_state)
     per_step_inputs = (np.arange(1, config.num_steps + 1), keys)
     final_state, log_normalizer_increments = jax.lax.scan(
         scan_step, init_state, per_step_inputs
     )
     log_normalizer_estimate = jnp.sum(log_normalizer_increments)
+    density_state = final_state[2]
     particle_state = ParticleState(
         samples=final_state[0],
         log_weights=final_state[1],
         log_normalizer_estimate=log_normalizer_estimate,
     )
-    return particle_state
+    return particle_state, density_state
 
 
 def outer_loop_smc(
@@ -166,6 +185,7 @@ def outer_loop_smc(
     key: RandomKey,
     config,
     logger,
+    density_state: int,
 ) -> AlgoResultsTuple:
     """The outer loop for Annealed Flow Transport Monte Carlo.
 
@@ -196,7 +216,7 @@ def outer_loop_smc(
 
     logging.info("Performing initial step redundantly for accurate timing...")
     initial_start_time = time.time()
-    inner_loop_jit(key, samples, log_weights, 1)
+    inner_loop_jit(key, samples, log_weights, 1, 0)
     initial_finish_time = time.time()
     initial_time_diff = initial_finish_time - initial_start_time
     logging.info("Initial step time / seconds  %f: ", initial_time_diff)
@@ -205,9 +225,13 @@ def outer_loop_smc(
     start_time = time.time()
     for step in range(1, num_temps):
         subkey, key = jax.random.split(key)
-        samples, log_weights, log_normalizer_increment, acceptance = inner_loop_jit(
-            subkey, samples, log_weights, step
-        )
+        (
+            samples,
+            log_weights,
+            log_normalizer_increment,
+            acceptance,
+            density_state,
+        ) = inner_loop_jit(subkey, samples, log_weights, step, density_state)
         acceptance_hmc = float(np.asarray(acceptance[0]))
         acceptance_rwm = float(np.asarray(acceptance[1]))
         acceptance_nuts = float(np.asarray(acceptance[2]))
@@ -238,4 +262,4 @@ def outer_loop_smc(
         delta_time=delta_time,
         initial_time_diff=initial_time_diff,
     )
-    return results
+    return results, density_state
