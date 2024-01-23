@@ -22,6 +22,8 @@ from typing import Callable, Tuple
 from absl import logging as log
 import numpy as np
 import tqdm
+import jax
+from annealed_flow_transport.distributions import WhitenedDistributionWrapper
 from annealed_flow_transport.loggers_pl import LoggerCollection
 from annealed_flow_transport import aft
 from annealed_flow_transport import craft
@@ -37,10 +39,11 @@ from annealed_flow_transport import vi
 import annealed_flow_transport.aft_types as tp
 import chex
 import haiku as hk
-import jax
 import optax
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
+
+from annealed_flow_transport.reference_vi import get_variational_approx
 
 
 # Type defs.
@@ -124,7 +127,7 @@ def prepare_outer_loop(
       An AlgoResultsTuple containing the experiment results.
 
     """
-    num_temps = config.num_steps + 1
+    num_temps = config.base_steps * config.steps_mult + 1
     if is_annealing_algorithm(config.algo):
         density_by_step = flow_transport.GeometricAnnealingSchedule(
             initial_log_density, final_log_density, num_temps
@@ -151,8 +154,8 @@ def prepare_outer_loop(
         save_checkpoint = None
 
     nb_params = sum(x.size for x in jax.tree_util.tree_leaves(flow_init_params))
-    log.info(f"Number of parameters: {nb_params * config.num_steps}")
-    logger.log_metrics({"nb_params": nb_params * config.num_steps}, 0)
+    log.info(f"Number of parameters: {nb_params * config.base_steps * config.steps_mult}")
+    logger.log_metrics({"nb_params": nb_params * config.base_steps * config.steps_mult}, 0)
 
     if config.algo == "vi":  # Note converted to stateful
         # Add a save_checkpoint function here to enable saving final state.
@@ -194,7 +197,7 @@ def prepare_outer_loop(
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_data/{config.group}_{config.name}_smc_{config.num_steps}_{config.seed}.csv",
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_smchmc_{config.base_steps * config.steps_mult}_{config.seed}.csv",
                 log_Z,
             )
         if logger:
@@ -301,7 +304,7 @@ def prepare_outer_loop(
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/benchmarking_data/{config.group}_{config.name}_craft_{config.num_steps}_{config.seed}.csv",
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_crafthmc_{config.base_steps * config.steps_mult}_{config.seed}.csv",
                 log_Z,
             )
         if logger:
@@ -352,17 +355,28 @@ def run_experiment(config) -> AlgoResultsTuple:
     logger = LoggerCollection(loggers)
     logger.log_hyperparams(OmegaConf.to_container(config, resolve=True))
 
+    key = jax.random.PRNGKey(config.seed)
+
     log_density_initial = getattr(densities, config.initial_config.density)(
         config.initial_config, (config.num_dims,), is_target=False
     )
     log_density_final = getattr(densities, config.final_config.density)(
         config.final_config, (config.num_dims,), is_target=True
     )
+
+    if config.use_vi_approx:
+        key, key_ = jax.random.split(key)
+        vi_params = get_variational_approx(config, key_, log_density_final)
+        log_density_final = WhitenedDistributionWrapper(
+            log_density_final,
+            vi_params["Variational"]["means"],
+            vi_params["Variational"]["scales"],
+        )
+
     initial_sampler = getattr(samplers, config.initial_sampler_config.initial_sampler)(
         config.initial_sampler_config
     )
 
-    key = jax.random.PRNGKey(config.seed)
 
     if config.flow_config.type == "ComposedFlows":
         config.flow_config.flow_configs = [

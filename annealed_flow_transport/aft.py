@@ -383,7 +383,7 @@ def outer_loop_aft(
     Returns:
       An AlgoResults tuple containing a summary of the results.
     """
-    num_temps = config.num_steps + 1
+    num_temps = config.base_steps * config.steps_mult + 1
 
     def free_energy_short(
         flow_params: FlowParams, samples: Array, log_weights: Array, step: int

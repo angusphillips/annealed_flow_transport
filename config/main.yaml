@@ -10,11 +10,14 @@ defaults:
 
   - experiment: difficult_gaussian
   - method: smc
+  - vi_lr_schedule: constant
 
   - override hydra/hydra_logging: colorlog
   - override hydra/job_logging: colorlog
 
 seed: 0
+
+steps_mult: 1
 
 work_dir: ${hydra:runtime.cwd}
 ckpt_dir: ckpt

@@ -144,10 +144,10 @@ def get_particle_propose(config) -> ParticlePropose:
 
     if is_annealing_markov_kernel_algorithm(config.algo):
         density_by_step = flow_transport.GeometricAnnealingSchedule(
-            log_density_initial, log_density_final, config.num_steps + 1
+            log_density_initial, log_density_final, config.base_steps * config.steps_mult + 1
         )
         markov_kernel_by_step = markov_kernel.MarkovTransitionKernel(
-            config.mcmc_config, density_by_step, config.num_steps + 1
+            config.mcmc_config, density_by_step, config.base_steps * config.steps_mult + 1
         )
 
     if is_flow_algorithm(config.algo):

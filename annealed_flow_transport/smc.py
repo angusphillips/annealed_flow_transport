@@ -146,7 +146,7 @@ def fast_outer_loop_smc(
         markov_kernel_by_step, density_by_step, config
     )
 
-    keys = jax.random.split(key, config.num_steps)
+    keys = jax.random.split(key, config.base_steps * config.steps_mult)
 
     def scan_step(passed_state, per_step_input):
         samples, log_weights, density_state = passed_state
@@ -164,7 +164,7 @@ def fast_outer_loop_smc(
         return new_passed_state, log_z_increment
 
     init_state = (samples, log_weights, density_state)
-    per_step_inputs = (np.arange(1, config.num_steps + 1), keys)
+    per_step_inputs = (np.arange(1, config.base_steps * config.steps_mult + 1), keys)
     final_state, log_normalizer_increments = jax.lax.scan(
         scan_step, init_state, per_step_inputs
     )
@@ -199,7 +199,7 @@ def outer_loop_smc(
     Returns:
       An AlgoResults tuple containing a summary of the results.
     """
-    num_temps = config.num_steps + 1
+    num_temps = config.base_steps * config.steps_mult + 1
     key, subkey = jax.random.split(key)
 
     initial_sampler_start = time.time()

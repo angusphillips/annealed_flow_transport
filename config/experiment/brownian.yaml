@@ -8,7 +8,9 @@ defaults:
   - /mcmc_config: brownian
   - /flow_config: brownian
   - /optimization_config: brownian
+  - /vi_optim: brownian
   
+base_steps: 1
 
 num_dims: 32
 
@@ -19,3 +21,4 @@ use_markov: True
 craft_batch_size: 2000
 craft_num_iters: 1000
 use_path_gradient: False
+use_vi_approx: True

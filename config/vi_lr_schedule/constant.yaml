@@ -1,0 +1,2 @@
+_target_: optax.constant_schedule
+value: ${vi_optim.lr}

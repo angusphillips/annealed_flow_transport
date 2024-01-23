@@ -8,7 +8,9 @@ defaults:
   - /mcmc_config: difficult_gaussian
   - /flow_config: difficult_gaussian
   - /optimization_config: difficult_gaussian
+  - /vi_optim: base
 
+base_steps: 1
 
 # Target settings
 num_dims: 1
@@ -27,4 +29,5 @@ snf_num_iters: 1000
 craft_batch_size: 2000
 craft_num_iters: 1000
 use_path_gradient: False
+use_vi_approx: False
 

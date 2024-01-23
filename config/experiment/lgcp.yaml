@@ -8,6 +8,9 @@ defaults:
   - /mcmc_config: lgcp
   - /flow_config: lgcp
   - /optimization_config: lgcp
+  - /vi_optim: base
+
+base_steps: 8
 
 num_dims: 1600
 
@@ -18,3 +21,4 @@ use_markov: True
 craft_batch_size: 2000
 craft_num_iters: 1000
 use_path_gradient: False
+use_vi_approx: True

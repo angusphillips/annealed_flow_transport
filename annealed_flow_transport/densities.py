@@ -74,6 +74,7 @@ class LogDensity(metaclass=abc.ABCMeta):
         self._config = config
         self._sample_shape = sample_shape
         self._is_target = is_target
+        self.dim = self._sample_shape[-1]
 
     @abc.abstractmethod
     def _check_constructor_inputs(

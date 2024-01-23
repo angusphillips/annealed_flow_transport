@@ -1,6 +1,3 @@
 # @package _global_
 
 algo: smc
-
-num_steps: 10
-

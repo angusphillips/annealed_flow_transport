@@ -8,6 +8,9 @@ defaults:
   - /mcmc_config: two_dim_challenging
   - /flow_config: two_dim_challenging
   - /optimization_config: two_dim_challenging
+  - /vi_optim: base
+
+base_steps: 1
 
 num_dims: 2
 
@@ -22,3 +25,4 @@ snf_num_iters: 1000
 craft_batch_size: 2000
 craft_num_iters: 1000
 use_path_gradient: False
+use_vi_approx: True
