@@ -155,7 +155,8 @@ def prepare_outer_loop(
 
     nb_params = sum(x.size for x in jax.tree_util.tree_leaves(flow_init_params))
     log.info(f"Number of parameters: {nb_params * config.base_steps * config.steps_mult}")
-    logger.log_metrics({"nb_params": nb_params * config.base_steps * config.steps_mult}, 0)
+    if logger is not None:
+        logger.log_metrics({"nb_params": nb_params * config.base_steps * config.steps_mult}, 0)
 
     if config.algo == "vi":  # Note converted to stateful
         # Add a save_checkpoint function here to enable saving final state.
@@ -197,7 +198,7 @@ def prepare_outer_loop(
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_smchmc_{config.base_steps * config.steps_mult}_{config.seed}.csv",
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_smchmcvi_{config.base_steps * config.steps_mult}_{config.seed}.csv",
                 log_Z,
             )
         if logger:
@@ -304,7 +305,7 @@ def prepare_outer_loop(
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_crafthmc_{config.base_steps * config.steps_mult}_{config.seed}.csv",
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_crafthmcvi_{config.base_steps * config.steps_mult}_{config.seed}.csv",
                 log_Z,
             )
         if logger:

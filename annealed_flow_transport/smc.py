@@ -247,8 +247,9 @@ def outer_loop_smc(
                 acceptance_rwm,
                 acceptance_nuts,
             )
-            logger.log_metrics({"acceptance_HMC": acceptance_hmc}, step=beta)
-            logger.log_metrics({"acceptance_NUTS": acceptance_nuts}, step=beta)
+            if logger:
+                logger.log_metrics({"acceptance_HMC": acceptance_hmc}, step=beta)
+                logger.log_metrics({"acceptance_NUTS": acceptance_nuts}, step=beta)
 
     finish_time = time.time()
     delta_time = finish_time - start_time
