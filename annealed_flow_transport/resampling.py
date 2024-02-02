@@ -96,3 +96,30 @@ def optionally_resample(key: RandomKey, log_weights: Array, samples: Samples,
   log_ess = log_effective_sample_size(log_weights)
   return jax.lax.cond(log_ess < jnp.log(threshold_sample_size), lambda_resample,
                       lambda_no_resample, (key, log_weights, samples))
+
+
+def essl(lw: Array):
+    # Mostly copied from github.com/nchopin/particles
+    """ESS (Effective sample size) computed from log-weights.
+
+    Parameters
+    ----------
+    lw: (N,) ndarray
+        log-weights
+
+    Returns
+    -------
+    float
+        the ESS of weights w = exp(lw), i.e. the quantity
+        sum(w**2) / (sum(w))**2
+
+    Note
+    ----
+    The ESS is a popular criterion to determine how *uneven* are the weights.
+    Its value is in the range [1, N], it equals N when weights are constant,
+    and 1 if all weights but one are zero.
+
+    """
+    w = jnp.exp(lw - lw.max())
+    res = (w.sum()) ** 2 / jnp.sum(w**2)
+    return res

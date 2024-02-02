@@ -221,6 +221,8 @@ def prepare_outer_loop(
             logger=logger,
             density_state=0,
         )
+        if config.save_samples:
+            np.savetxt(f'/vols/ziz/not-backed-up/anphilli/diffusion_smc/ess/{config.name}_SMC_{config.base_steps * config.steps_mult}.csv', np.array(results.ess_log))
     elif config.algo == "snf":  # Not converted to stateful
         opt = get_optimizer(
             config.optimization_config.snf_step_size,

@@ -201,6 +201,7 @@ def outer_loop_smc(
     """
     num_temps = config.base_steps * config.steps_mult + 1
     key, subkey = jax.random.split(key)
+    ess_log = np.zeros((num_temps))
 
     initial_sampler_start = time.time()
     samples = initial_sampler(subkey, config.batch_size, (config.num_dims,))
@@ -208,6 +209,8 @@ def outer_loop_smc(
     initial_sampler_time_diff = initial_sampler_finish - initial_sampler_start
     logging.info("Initial sampler time / seconds  %f: ", initial_sampler_time_diff)
     log_weights = -jnp.log(config.batch_size) * jnp.ones(config.batch_size)
+
+    ess_log[0] = resampling.essl(log_weights)
 
     logging.info("Jitting step...")
     inner_loop_jit = jax.jit(
@@ -235,6 +238,7 @@ def outer_loop_smc(
         acceptance_hmc = float(np.asarray(acceptance[0]))
         acceptance_rwm = float(np.asarray(acceptance[1]))
         acceptance_nuts = float(np.asarray(acceptance[2]))
+        ess_log[step] = resampling.essl(log_weights)
 
         log_normalizer_estimate += log_normalizer_increment
         if step % config.report_step == 0:
@@ -260,6 +264,7 @@ def outer_loop_smc(
         test_samples=samples,
         test_log_weights=log_weights,
         log_normalizer_estimate=log_normalizer_estimate,
+        ess_log = ess_log,
         delta_time=delta_time,
         initial_time_diff=initial_time_diff,
     )

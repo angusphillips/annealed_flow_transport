@@ -19,6 +19,6 @@ resample_threshold: 0.3
 
 use_markov: True
 craft_batch_size: 2000
-craft_num_iters: 1000
+craft_num_iters: 200
 use_path_gradient: False
 use_vi_approx: True

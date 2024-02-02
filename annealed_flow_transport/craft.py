@@ -21,6 +21,7 @@ from annealed_flow_transport import flow_transport
 import annealed_flow_transport.aft_types as tp
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 
 
@@ -417,6 +418,17 @@ def outer_loop_craft(
     log.info("Initial step time / seconds  %f: ", initial_time_diff)
     log.info("Launching training...")
 
+    log_array = np.zeros(
+            (config.craft_num_iters // config.report_step, 3)
+        )
+    
+    def logZ_eval(key, params):
+        keys = jax.random.split(key, config.num_smc_iters)
+        logZ = jax.vmap(lambda key: craft_evaluation_loop(key, params, flow_apply, markov_kernel_by_step, initial_sampler, density_by_step, 0, config)[0].log_normalizer_estimate)(keys)
+        return logZ
+    
+    logZ_eval_jitted = jax.jit(logZ_eval)
+
     start_time = time.time()
     for step in range(config.craft_num_iters):
         with jax.profiler.StepTraceAnnotation("train", step_num=step):
@@ -446,7 +458,12 @@ def outer_loop_craft(
                     step,
                     overall_free_energy,
                     log_normalizer_estimate,
-                )
+                )  
+                # logZ = logZ_eval_jitted(subkey, transition_params)
+                # log_array[(step // config.report_step) - 1, :] = (
+                #     density_state,
+                #     logZ.mean(), logZ.var()
+                # )
                 if logger is not None:
                     logger.log_metrics(
                         {
@@ -458,6 +475,7 @@ def outer_loop_craft(
                     )
 
     finish_time = time.time()
+    # np.savetxt(f'/vols/ziz/not-backed-up/anphilli/diffusion_smc/density_calls_data/{config.name}_craft_{config.base_steps * config.steps_mult}_{config.seed}.csv', log_array)
     delta_time = finish_time - start_time
     log.info("Training time / seconds  %f: ", delta_time)
     if logger is not None:

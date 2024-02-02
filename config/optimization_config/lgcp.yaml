@@ -1,8 +1,8 @@
 free_energy_iters: 500
 aft_step_size: 1e-2
-craft_step_size: 5e-2
-craft_boundaries: [100]
-craft_scales: [1e-2]
+craft_step_size: 1e-4 # much smaller for using vi approximation
+# craft_boundaries: [100]
+# craft_scales: [1e-2]
 snf_step_size: 0.1
 snf_boundaries: [70, 100]
 snf_scales: [5e-2, 1e-2]

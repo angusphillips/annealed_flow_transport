@@ -287,6 +287,56 @@ class NormalMixtureDistribution(Distribution):
         return out, density_state
 
 
+class SeparatedMixture1D(Distribution):
+    def __init__(
+        self,
+        means: Array,
+        covs: Array,
+        weights: Array,
+        dim: int = 1,
+        is_target: bool = False,
+    ):
+        super().__init__(dim, is_target)
+        self._means = means
+        self._covs = covs
+        self._weights = weights
+        self.n_components = int(len(self._weights))
+
+    @check_shapes("return: [b, d]")
+    def sample(self, key: Key, num_samples: int) -> Array:
+        batched_sample_shape = (num_samples,) + (self.dim,)
+        subkeys = jax.random.split(key, num_samples)
+
+        def unbatched_sample(key):
+            subkey1, subkey2 = jax.random.split(key)
+            comp = jax.random.choice(subkey1, self.n_components, p=self._weights).astype(
+                int
+            )
+            mean = self._means[comp]
+            cov = self._covs[comp]
+            sample = jax.random.multivariate_normal(key=subkey2, mean=mean, cov=cov)
+            return sample
+
+        samples = jax.vmap(unbatched_sample)(subkeys)
+        assert_shape(samples, batched_sample_shape)
+        return samples
+
+    @check_shapes("x: [b, d]", "return[0]: [b]")
+    def evaluate_log_density(
+        self, x: Array, density_state: int
+    ) -> tp.Tuple[Array, int]:
+        sum = 0.0
+        for component in range(self.n_components):
+            mean = self._means[component]  # (self.dim,)
+            cov = self._covs[component]
+            sum += self._weights[component] * jax.scipy.stats.multivariate_normal.pdf(
+                x, mean=mean, cov=cov
+            )
+        out = jnp.log(sum)
+        density_state += self.is_target * x.shape[0]
+        return out, density_state
+
+
 class ChallengingTwoDimensionalMixture(Distribution):
     """A challenging mixture of Gaussians in two dimensions.
     From annealed_flow_transport codebase.

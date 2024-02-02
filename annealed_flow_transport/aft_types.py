@@ -64,6 +64,7 @@ class AlgoResultsTuple(NamedTuple):
   test_samples: Samples
   test_log_weights: Array
   log_normalizer_estimate: Array
+  ess_log: Array
   delta_time: float
   initial_time_diff: float
 
