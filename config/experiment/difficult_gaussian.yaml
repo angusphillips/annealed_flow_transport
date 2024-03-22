@@ -31,3 +31,4 @@ craft_num_iters: 500
 use_path_gradient: False
 use_vi_approx: False
 
+reference_scale: 1.0

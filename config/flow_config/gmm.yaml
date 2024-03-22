@@ -1,0 +1,11 @@
+type: "SplineInverseAutoregressiveFlow"
+num_spline_bins: 100
+num_bins: 100
+intermediate_hids_per_dim: 30
+num_layers: 3
+identity_init: True
+lower_lim: -40.0
+upper_lim: 40.0
+min_bin_size: 1e-4
+min_derivative: 1e-4
+bias_last: True

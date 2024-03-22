@@ -20,6 +20,7 @@ import time
 from typing import Callable, Tuple
 
 from absl import logging as log
+from matplotlib import pyplot as plt
 import numpy as np
 import tqdm
 import jax
@@ -44,6 +45,7 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
 from annealed_flow_transport.reference_vi import get_variational_approx
+from annealed_flow_transport.resampling import simple_resampling
 
 
 # Type defs.
@@ -402,6 +404,17 @@ def run_experiment(config) -> AlgoResultsTuple:
         key,
         logger,
     )
+
+    key, key_ = jax.random.split(key)
+    final_samples, _ = simple_resampling(key=key_, log_weights=results.test_log_weights, samples=results.test_samples)
+    key, key_ = jax.random.split(key)
+    target_samples = log_density_final.sample(key_, final_samples.shape[0])
+    fig, ax = plt.subplots(1, 1)
+    ax.scatter(target_samples[:, 0], target_samples[:, 1], label='target', alpha=0.3)
+    ax.scatter(final_samples[:, 0], final_samples[:, 1], label=f'{config.algo}', alpha=0.3)
+    ax.legend()
+    logger.log_plot(name='samples', plt=fig, step=0)
+    
 
     logger.save()
     logger.finalize("success")

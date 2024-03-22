@@ -70,11 +70,11 @@ class LogDensity(metaclass=abc.ABCMeta):
     def __init__(
         self, config: ConfigDict, sample_shape: SampleShape, is_target: bool = False
     ):
-        self._check_constructor_inputs(config, sample_shape)
         self._config = config
         self._sample_shape = sample_shape
         self._is_target = is_target
         self.dim = self._sample_shape[-1]
+        self._check_constructor_inputs(config, sample_shape)
 
     @abc.abstractmethod
     def _check_constructor_inputs(
@@ -194,6 +194,53 @@ class MultivariateNormalDistribution(LogDensity):
         output = multivariate_normal.logpdf(x, mean=mean, cov=cov)
         density_state += self._is_target * x.shape[0]
         return output, density_state
+
+class GaussianMixtureModel(LogDensity):
+
+    def _check_constructor_inputs(self, config: ConfigDict, sample_shape: SampleShape):
+        expected_members_types = [("seed", int), ("n_mixes", int), ("loc_scaling", float), ("log_var_scaling", float)]
+        assert len(sample_shape) == 1
+        self._check_members_types(config, expected_members_types)
+        self.initialise_parameters()
+
+    def initialise_parameters(self):
+        key = jax.random.PRNGKey(self._config.seed)
+        key, subkey = jax.random.split(key)
+        self._means = (
+            (jax.random.uniform(key=subkey, shape=(self._config.n_mixes, self.dim)) - 0.5)
+            * 2
+            * self._config.loc_scaling
+        )
+        self._scales = jax.nn.softplus(jnp.ones((self._config.n_mixes, self.dim)) * self._config.log_var_scaling)
+
+    def evaluate_log_density(
+        self, x: Array, density_state: int
+    ) -> tp.Tuple[Array, int]:
+        logpdfs = jnp.zeros((self._config.n_mixes))
+        logpdfs = jax.vmap(
+            lambda component: jax.scipy.stats.multivariate_normal.logpdf(
+                x,
+                mean=self._means[component],
+                cov=jnp.diag(self._scales[component] ** 2),
+            )
+        )(jnp.arange(self._config.n_mixes))
+        out = jax.scipy.special.logsumexp(logpdfs, axis=0)
+        density_state += self._is_target * x.shape[0]
+        return out, density_state
+
+    def sample(self, key: Array, num_samples: int) -> Array:
+        batched_sample_shape = (num_samples,) + (self.dim,)
+        subkey1, subkey2 = jax.random.split(key)
+        components = jax.random.choice(
+            subkey1, a=int(self._config.n_mixes), shape=(num_samples,)
+        )
+        mean = self._means[components]  # (n_samples, dim)
+        scale = self._scales[components]  # (n_samples, dim)
+        cov = jax.vmap(lambda s: jnp.diag(s**2))(scale)
+        samples = jax.random.multivariate_normal(
+            key=subkey2, mean=mean, cov=cov, shape=(num_samples,)
+        )
+        return samples
 
 
 class FunnelDistribution(LogDensity):

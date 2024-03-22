@@ -3,14 +3,14 @@
 name: difficult_2d
 defaults:
   - /initial_config: multivariate_normal
-  - /final_config: two_dim_challenging
+  - /final_config: gmm
   - /initial_sampler_config: multivariate_normal
-  - /mcmc_config: two_dim_challenging
-  - /flow_config: two_dim_challenging
-  - /optimization_config: two_dim_challenging
+  - /mcmc_config: gmm
+  - /flow_config: gmm
+  - /optimization_config: gmm
   - /vi_optim: base
 
-base_steps: 1
+base_steps: 2
 
 num_dims: 2
 
@@ -25,6 +25,6 @@ snf_num_iters: 1000
 craft_batch_size: 2000
 craft_num_iters: 500
 use_path_gradient: False
-use_vi_approx: True
+use_vi_approx: False
 
-reference_scale: 1.0
+reference_scale: 20.0

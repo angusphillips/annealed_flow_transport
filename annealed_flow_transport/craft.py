@@ -487,6 +487,7 @@ def outer_loop_craft(
         test_samples=final_samples,
         test_log_weights=final_log_weights,
         log_normalizer_estimate=log_normalizer_estimate,
+        ess_log=jnp.array([]),
         delta_time=delta_time,
         initial_time_diff=initial_time_diff,
     )

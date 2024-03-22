@@ -1,0 +1,6 @@
+density: GaussianMixtureModel
+seed: 42
+n_mixes: 40
+loc_scaling: 40.0
+log_var_scaling: 1.0
+is_target: True
