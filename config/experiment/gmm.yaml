@@ -12,7 +12,7 @@ defaults:
 
 base_steps: 2
 
-num_dims: 2
+num_dims: 10
 
 # method specific settings
 use_resampling: True
@@ -23,7 +23,7 @@ snf_batch_size: 2000
 snf_num_iters: 1000
 
 craft_batch_size: 2000
-craft_num_iters: 500
+craft_num_iters: 1000
 use_path_gradient: False
 use_vi_approx: False
 

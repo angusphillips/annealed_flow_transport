@@ -35,7 +35,7 @@ class NormalDistribution(object):
                sample_shape: Tuple[int]) -> Array:
     batched_sample_shape = (num_samples,) + sample_shape
     return jax.random.normal(key,
-                             shape=batched_sample_shape)
+                             shape=batched_sample_shape) * self._config.scale
 
 
 class MultivariateNormalDistribution(object):
@@ -47,4 +47,4 @@ class MultivariateNormalDistribution(object):
   def __call__(self, key: RandomKey, num_samples: int,
                sample_shape: Tuple[int]) -> Array:
     batched_sample_shape = (num_samples,) + sample_shape
-    return jax.random.normal(key, shape=batched_sample_shape)
+    return jax.random.normal(key, shape=batched_sample_shape) * self._config.scale

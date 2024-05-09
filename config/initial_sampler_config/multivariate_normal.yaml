@@ -1,1 +1,2 @@
 initial_sampler: "MultivariateNormalDistribution"
+scale: ${reference_scale}

@@ -177,11 +177,11 @@ class MultivariateNormalDistribution(LogDensity):
     """A normalized multivariate normal distribution.
 
     Each element of the mean vector has the same value config.shared_mean
-    Each element of the diagonal covariance matrix has value config.diagonal_cov
+    Each element of the diagonal covariance matrix has value config.diagonal_scale**2
     """
 
     def _check_constructor_inputs(self, config: ConfigDict, sample_shape: SampleShape):
-        expected_members_types = [("shared_mean", float), ("diagonal_cov", float)]
+        expected_members_types = [("shared_mean", float), ("diagonal_scale", float)]
         assert len(sample_shape) == 1
         self._check_members_types(config, expected_members_types)
 
@@ -190,7 +190,7 @@ class MultivariateNormalDistribution(LogDensity):
     ) -> tp.Tuple[Array, int]:
         num_dim = np.shape(x)[1]
         mean = jnp.ones(num_dim) * self._config.shared_mean
-        cov = jnp.diag(jnp.ones(num_dim) * self._config.diagonal_cov)
+        cov = jnp.diag(jnp.ones(num_dim) * self._config.diagonal_scale**2)
         output = multivariate_normal.logpdf(x, mean=mean, cov=cov)
         density_state += self._is_target * x.shape[0]
         return output, density_state
@@ -205,20 +205,23 @@ class GaussianMixtureModel(LogDensity):
 
     def initialise_parameters(self):
         key = jax.random.PRNGKey(self._config.seed)
-        key, subkey = jax.random.split(key)
+        key, subkey1, subkey2 = jax.random.split(key, 3)
         self._means = (
-            (jax.random.uniform(key=subkey, shape=(self._config.n_mixes, self.dim)) - 0.5)
+            (jax.random.uniform(key=subkey1, shape=(self._config.n_mixes, self.dim)) - 0.5)
             * 2
             * self._config.loc_scaling
         )
         self._scales = jax.nn.softplus(jnp.ones((self._config.n_mixes, self.dim)) * self._config.log_var_scaling)
+        _weights = jax.random.uniform(subkey2, (self._config.n_mixes,))
+        self._weights = _weights / jnp.sum(_weights)
 
     def evaluate_log_density(
         self, x: Array, density_state: int
     ) -> tp.Tuple[Array, int]:
         logpdfs = jnp.zeros((self._config.n_mixes))
         logpdfs = jax.vmap(
-            lambda component: jax.scipy.stats.multivariate_normal.logpdf(
+            lambda component: jnp.log(self._weights[component])
+            + jax.scipy.stats.multivariate_normal.logpdf(
                 x,
                 mean=self._means[component],
                 cov=jnp.diag(self._scales[component] ** 2),
@@ -232,7 +235,7 @@ class GaussianMixtureModel(LogDensity):
         batched_sample_shape = (num_samples,) + (self.dim,)
         subkey1, subkey2 = jax.random.split(key)
         components = jax.random.choice(
-            subkey1, a=int(self._config.n_mixes), shape=(num_samples,)
+            subkey1, a=int(self._config.n_mixes), shape=(num_samples,), p=self._weights
         )
         mean = self._means[components]  # (n_samples, dim)
         scale = self._scales[components]  # (n_samples, dim)

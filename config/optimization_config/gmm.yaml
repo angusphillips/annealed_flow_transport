@@ -1,5 +1,5 @@
 free_energy_iters: 1000
 aft_step_size: 1e-3
 vi_step_size: 1e-3
-craft_step_size: 1e-2
+craft_step_size: 1e-3
 snf_step_size: 1e-2
