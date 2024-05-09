@@ -45,7 +45,7 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
 from annealed_flow_transport.reference_vi import get_variational_approx
-from annealed_flow_transport.resampling import simple_resampling
+from annealed_flow_transport.resampling import simple_resampling, systematic_resampling
 
 
 # Type defs.
@@ -199,11 +199,12 @@ def prepare_outer_loop(
         end_time = time.time()
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
+            filename = f"/data/ziz/not-backed-up/anphilli/diffusion_smc/outputs/logZ/{config.group}/{config.name}_smcSystem_{config.base_steps * config.steps_mult}_{config.seed}.csv"
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_smchmcvi_{config.base_steps * config.steps_mult}_{config.seed}.csv",
+                filename,
                 log_Z,
             )
-        if logger:
+        if logger is not None:
             logger.log_metrics(
                 {
                     "sampling_time": (end_time - start_time) / config.num_smc_iters,
@@ -212,7 +213,7 @@ def prepare_outer_loop(
                 step=0,
             )
             logger.log_metrics(
-                {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, 0
+                {"final_log_Z": np.mean(log_Z), "var_final_log_Z": np.var(log_Z)}, step=0
             )
         results, _ = smc.outer_loop_smc(
             density_by_step=density_by_step,
@@ -223,8 +224,8 @@ def prepare_outer_loop(
             logger=logger,
             density_state=0,
         )
-        if config.save_samples:
-            np.savetxt(f'/vols/ziz/not-backed-up/anphilli/diffusion_smc/ess/{config.name}_SMC_{config.base_steps * config.steps_mult}.csv', np.array(results.ess_log))
+        # if config.save_samples:
+        #     np.savetxt(f'/vols/ziz/not-backed-up/anphilli/diffusion_smc/ess/{config.name}_SMC_{config.base_steps * config.steps_mult}.csv', np.array(results.ess_log))
     elif config.algo == "snf":  # Not converted to stateful
         opt = get_optimizer(
             config.optimization_config.snf_step_size,
@@ -405,15 +406,9 @@ def run_experiment(config) -> AlgoResultsTuple:
         logger,
     )
 
-    key, key_ = jax.random.split(key)
-    final_samples, _ = simple_resampling(key=key_, log_weights=results.test_log_weights, samples=results.test_samples)
-    key, key_ = jax.random.split(key)
-    target_samples = log_density_final.sample(key_, final_samples.shape[0])
-    fig, ax = plt.subplots(1, 1)
-    ax.scatter(target_samples[:, 0], target_samples[:, 1], label='target', alpha=0.3)
-    ax.scatter(final_samples[:, 0], final_samples[:, 1], label=f'{config.algo}', alpha=0.3)
-    ax.legend()
-    logger.log_plot(name='samples', plt=fig, step=0)
+    # key, key_ = jax.random.split(key)
+    # final_samples, _ = systematic_resampling(key=key_, log_weights=results.test_log_weights, samples=results.test_samples)
+    # np.savetxt(f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/samples/{config.name}_{config.algo}_{config.base_steps * config.steps_mult}.csv", final_samples)
     
 
     logger.save()

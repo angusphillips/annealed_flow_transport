@@ -26,6 +26,29 @@ Samples = tp.Samples
 
 assert_trees_all_equal_shapes = chex.assert_trees_all_equal_shapes
 
+def _softmax(lw: Array):
+    # Mostly copied from github.com/nchopin/particles
+    """Exponentiate, then normalise (so that sum equals one).
+
+    Arguments
+    ---------
+    lw: ndarray
+        log weights.
+
+    Returns
+    -------
+    W: ndarray of the same shape as lw
+        W = exp(lw) / sum(exp(lw))
+
+    Note
+    ----
+    uses the log_sum_exp trick to avoid overflow (i.e. subtract the max
+    before exponentiating)
+    """
+    # noinspection PyArgumentList
+    w = jnp.exp(lw - lw.max())
+    return w / w.sum()
+
 
 def log_effective_sample_size(log_weights: Array) -> Array:
   """Numerically stable computation of log of effective sample size.
@@ -44,6 +67,41 @@ def log_effective_sample_size(log_weights: Array) -> Array:
   chex.assert_equal_shape([first_term, second_term])
   return first_term-second_term
 
+def systematic_resampling(
+    key: RandomKey,
+    log_weights: Array,
+    samples: Array,
+) -> Tuple[Array, Array]:
+    r"""
+    Select elements from `samples` with weights defined by `log_weights` using systematic resampling.
+
+    Parameters
+    ----------
+    rng:
+        random key
+    samples:
+        a sequence of elements to be resampled. Must have the same length as `log_weights`
+
+    Returns
+    -------
+        * ``samples``, giving the resampled elements
+        * ``lw``, giving the new logweights
+    """
+    N = log_weights.shape[0]
+
+    # permute order of samples
+    rng, rng_ = jax.random.split(key)
+    log_weights = jax.random.permutation(rng_, log_weights)
+    samples = jax.random.permutation(rng_, samples)
+
+    # Generates the uniform variates depending on sampling mode
+    rng, rng_ = jax.random.split(rng)
+    sorted_uniform = (jax.random.uniform(rng_, (1,)) + jnp.arange(N)) / N
+
+    # Performs resampling given the above uniform variates
+    new_idx = jnp.searchsorted(jnp.cumsum(_softmax(log_weights)), sorted_uniform)
+    samples = samples[new_idx, :]
+    return samples, jnp.zeros(N) - jnp.log(N)
 
 def simple_resampling(key: RandomKey, log_weights: Array,
                       samples: Array) -> Tuple[Array, Array]:
@@ -91,7 +149,8 @@ def optionally_resample(key: RandomKey, log_weights: Array, samples: Samples,
   # samples and weights.
   # lamdba_no_resample will do that on the tuple given to jax.lax.cond below.
   lambda_no_resample = lambda x: (x[2], x[1])
-  lambda_resample = lambda x: simple_resampling(*x)
+  # lambda_resample = lambda x: simple_resampling(*x)
+  lambda_resample = lambda x: systematic_resampling(*x)
   threshold_sample_size = log_weights.shape[0] * resample_threshold
   log_ess = log_effective_sample_size(log_weights)
   return jax.lax.cond(log_ess < jnp.log(threshold_sample_size), lambda_resample,
