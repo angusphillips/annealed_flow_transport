@@ -20,6 +20,7 @@ import time
 from typing import Callable, Tuple
 
 from absl import logging as log
+# import logging
 from matplotlib import pyplot as plt
 import numpy as np
 import tqdm
@@ -67,6 +68,20 @@ InitialSampler = tp.InitialSampler
 LogDensityNoStep = tp.LogDensityNoStep
 assert_equal_shape = chex.assert_equal_shape
 AlgoResultsTuple = tp.AlgoResultsTuple
+
+import jax.numpy as jnp
+import ot
+
+def W2_distance(x, y, reg=0.01):
+    N = x.shape[0]
+    x, y = jnp.array(x), jnp.array(y)
+    a, b = jnp.ones(N) / N, jnp.ones(N) / N
+
+    M = ot.dist(x, y)
+    M /= M.max()
+
+    T_reg = ot.sinkhorn2(a, b, M, reg, log=False, numItermax=10000, stopThr=1e-16)
+    return T_reg
 
 
 def get_optimizer(initial_learning_rate: float, boundaries_and_scales):
@@ -199,7 +214,7 @@ def prepare_outer_loop(
         end_time = time.time()
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
-            filename = f"/data/ziz/not-backed-up/anphilli/diffusion_smc/outputs/logZ/{config.group}/{config.name}_smcSystem_{config.base_steps * config.steps_mult}_{config.seed}.csv"
+            filename = f"/data/ziz/not-backed-up/anphilli/diffusion_smc/outputs/logZ/{config.group}/{config.name}_smc_{config.base_steps * config.steps_mult}_{config.seed}.csv"
             np.savetxt(
                 filename,
                 log_Z,
@@ -224,6 +239,14 @@ def prepare_outer_loop(
             logger=logger,
             density_state=0,
         )
+        rng, rng_ = jax.random.split(rng)
+        final_samples, _ = systematic_resampling(key=rng_, log_weights=results.test_log_weights, samples=results.test_samples)
+
+        if 'gmm' in config.name:
+            rng, rng_ = jax.random.split(rng)
+            target_samples = final_log_density.sample(rng_, int(config.batch_size))
+            w2dist = W2_distance(target_samples, final_samples)
+            logger.log_metrics({"W2_distance": w2dist}, 0)
         # if config.save_samples:
         #     np.savetxt(f'/vols/ziz/not-backed-up/anphilli/diffusion_smc/ess/{config.name}_SMC_{config.base_steps * config.steps_mult}.csv', np.array(results.ess_log))
     elif config.algo == "snf":  # Not converted to stateful
@@ -307,10 +330,20 @@ def prepare_outer_loop(
             eval_results, sampling_density_calls = eval_sampler(key=rng_)
             log_Z[i] = eval_results.log_normalizer_estimate
         end_time = time.time()
+
+        rng, rng_ = jax.random.split(rng)
+        final_samples, _ = systematic_resampling(key=rng_, log_weights=eval_results.log_weights, samples=eval_results.samples)
+
+        if 'gmm' in config.name:
+            rng, rng_ = jax.random.split(rng)
+            target_samples = final_log_density.sample(rng_, int(config.craft_batch_size))
+            w2dist = W2_distance(target_samples, final_samples)
+            logger.log_metrics({"W2_distance": w2dist}, 0)
+
         # Save normalising constant estimates (comment out when not doing a final evaluation run)
         if config.save_samples:
             np.savetxt(
-                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/{config.name}_crafthmcvi_{config.base_steps * config.steps_mult}_{config.seed}.csv",
+                f"/data/ziz/not-backed-up/anphilli/diffusion_smc/outputs/logZ/{config.group}/{config.name}_craft_{config.base_steps * config.steps_mult}_{config.seed}.csv",
                 log_Z,
             )
         if logger:
@@ -408,9 +441,9 @@ def run_experiment(config) -> AlgoResultsTuple:
 
     # key, key_ = jax.random.split(key)
     # final_samples, _ = systematic_resampling(key=key_, log_weights=results.test_log_weights, samples=results.test_samples)
-    # np.savetxt(f"/data/ziz/not-backed-up/anphilli/diffusion_smc/{config.group}/samples/{config.name}_{config.algo}_{config.base_steps * config.steps_mult}.csv", final_samples)
+    # np.savetxt(f"/vols/ziz/not-backed-up/anphilli/diffusion_smc/outputs/samples/{config.group}/{config.algo}.csv", final_samples)#{config.name}_{config.algo}_{config.base_steps * config.steps_mult}.csv", final_samples)
     
-
-    logger.save()
-    logger.finalize("success")
+    if logger:
+        logger.save()
+        logger.finalize("success")
     return results

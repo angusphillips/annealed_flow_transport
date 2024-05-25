@@ -12,6 +12,8 @@ defaults:
 
 base_steps: 1
 
+has_ground_truth: True
+
 # Target settings
 num_dims: 1
 target_loc: 2.75

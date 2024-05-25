@@ -1,18 +1,20 @@
 # @package _global_
 
-name: difficult_2d
+name: gmm20
 defaults:
   - /initial_config: multivariate_normal
   - /final_config: gmm
   - /initial_sampler_config: multivariate_normal
-  - /mcmc_config: gmm
+  - /mcmc_config: gmm20
   - /flow_config: gmm
   - /optimization_config: gmm
   - /vi_optim: base
 
 base_steps: 2
 
-num_dims: 10
+num_dims: 20
+
+has_ground_truth: True
 
 # method specific settings
 use_resampling: True
